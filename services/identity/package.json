@@ -2,18 +2,24 @@
   "name": "@tana/identity",
   "version": "0.1.0",
   "type": "module",
-  "description": "Tana identity service - User authentication and session management",
+  "description": "Tana identity service - QR code authentication and session management",
   "main": "src/index.ts",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
+    "dev:node": "tsx watch src/index.ts",
     "start": "bun run src/index.ts",
+    "start:node": "node --loader tsx src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "test": "bun test",
-    "db:migrate": "bun run src/scripts/migrate.ts"
+    "db:generate": "drizzle-kit generate:pg",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push:pg",
+    "db:studio": "drizzle-kit studio",
+    "migration:apply": "bun run src/scripts/apply-migrations.ts"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.2.0",
-    "@noble/ed25519": "^3.0.0",
+    "@tana/crypto": "workspace:*",
     "drizzle-orm": "^0.30.0",
     "hono": "^4.0.0",
     "nanoid": "^5.0.0",

@@ -261,6 +261,7 @@ export interface UserConfig {
   publicKey: string
   privateKey: string
   displayName: string
+  role?: 'sovereign' | 'staff' | 'user' // User role on blockchain
   createdAt: string
   chains: string[]
 }

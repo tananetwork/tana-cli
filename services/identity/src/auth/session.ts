@@ -1,94 +1,61 @@
 /**
- * Auth Session Management
+ * Session Management
  *
- * Handles creation, validation, and lifecycle of authentication sessions
- * for mobile QR code login
+ * Handles creation, retrieval, and updates of authentication sessions
  */
 
-import { randomBytes } from 'crypto'
+import { db, authSessions } from '../db'
+import { eq, and, gt, lt } from 'drizzle-orm'
 import { customAlphabet } from 'nanoid'
-import { db } from '../db'
-import { authSessions } from '../db/schema'
-import { eq, and, lt } from 'drizzle-orm'
-import * as ed from '@noble/ed25519'
+import { randomBytes } from 'crypto'
 
-const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 16)
+// Custom nanoid for session IDs (readable, URL-safe)
+const nanoid = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 16)
 
-// Session expiration time (5 minutes)
-const SESSION_EXPIRATION_MS = 5 * 60 * 1000
-
-// Session token expiration (30 days)
-const SESSION_TOKEN_EXPIRATION_MS = 30 * 24 * 60 * 60 * 1000
+// Session configuration
+const SESSION_EXPIRY_MS = 10 * 60 * 1000 // 10 minutes (extended for better UX)
+const SESSION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 /**
- * Generate a unique session ID
- */
-export function generateSessionId(): string {
-  return `sess_${nanoid()}`
-}
-
-/**
- * Generate a random challenge for signature verification
+ * Generate a random challenge string (32 bytes = 64 hex chars)
  */
 export function generateChallenge(): string {
-  return `auth_chal_${randomBytes(32).toString('hex')}`
+  return randomBytes(32).toString('hex')
 }
 
 /**
- * Generate a secure session token
+ * Generate a session token (used after approval)
+ * This is a simple random token approach. For JWT, use jsonwebtoken or jose library.
  */
 export function generateSessionToken(): string {
-  return `tana_session_${randomBytes(32).toString('base64url')}`
-}
-
-/**
- * Verify Ed25519 signature
- */
-async function verifySignature(
-  message: string,
-  signature: string,
-  publicKey: string
-): Promise<boolean> {
-  try {
-    const messageBytes = new TextEncoder().encode(message)
-    const signatureBytes = Buffer.from(signature, 'hex')
-    const publicKeyBytes = Buffer.from(publicKey, 'hex')
-
-    return await ed.verify(signatureBytes, messageBytes, publicKeyBytes)
-  } catch (error) {
-    console.error('Signature verification error:', error)
-    return false
-  }
+  return randomBytes(32).toString('hex')
 }
 
 /**
  * Create a new authentication session
  */
-export async function createSession(params: {
-  returnUrl: string
+export async function createSession(options: {
+  returnUrl?: string
   appName?: string
   appIcon?: string
 }) {
-  const sessionId = generateSessionId()
+  const sessionId = 'sess_' + nanoid()
   const challenge = generateChallenge()
-  const expiresAt = new Date(Date.now() + SESSION_EXPIRATION_MS)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + SESSION_EXPIRY_MS)
 
-  await db.insert(authSessions).values({
+  const [session] = await db.insert(authSessions).values({
     id: sessionId,
     challenge,
     status: 'waiting',
-    returnUrl: params.returnUrl,
-    appName: params.appName,
-    appIcon: params.appIcon,
+    returnUrl: options.returnUrl || 'https://tana.network',
+    appName: options.appName || null,
+    appIcon: options.appIcon || null,
+    createdAt: now,
     expiresAt,
-  })
+  }).returning()
 
-  return {
-    sessionId,
-    challenge,
-    expiresAt: expiresAt.getTime(),
-    expiresIn: SESSION_EXPIRATION_MS / 1000, // seconds
-  }
+  return session
 }
 
 /**
@@ -101,193 +68,186 @@ export async function getSession(sessionId: string) {
     .where(eq(authSessions.id, sessionId))
     .limit(1)
 
-  return session
+  return session || null
 }
 
 /**
- * Mark session as scanned
+ * Get session by challenge (for mobile app lookup)
+ */
+export async function getSessionByChallenge(challenge: string) {
+  const [session] = await db
+    .select()
+    .from(authSessions)
+    .where(eq(authSessions.challenge, challenge))
+    .limit(1)
+
+  return session || null
+}
+
+/**
+ * Get session by token (for API authentication)
+ */
+export async function getSessionByToken(token: string) {
+  const [session] = await db
+    .select()
+    .from(authSessions)
+    .where(eq(authSessions.sessionToken, token))
+    .limit(1)
+
+  return session || null
+}
+
+/**
+ * Check if session is expired
+ */
+export function isSessionExpired(session: { expiresAt: Date }): boolean {
+  return new Date() > session.expiresAt
+}
+
+/**
+ * Check if session is valid for approval
+ */
+export function canApproveSession(session: {
+  status: string
+  expiresAt: Date
+}): boolean {
+  if (isSessionExpired(session)) {
+    return false
+  }
+
+  // Can only approve sessions that are waiting or scanned
+  return session.status === 'waiting' || session.status === 'scanned'
+}
+
+/**
+ * Mark session as scanned (mobile app opened the QR code)
  */
 export async function markSessionScanned(sessionId: string) {
-  await db
+  const [updated] = await db
     .update(authSessions)
     .set({
       status: 'scanned',
       scannedAt: new Date(),
     })
     .where(eq(authSessions.id, sessionId))
+    .returning()
+
+  return updated || null
 }
 
 /**
- * Approve session with signed challenge
+ * Approve session with user credentials
  */
-export async function approveSession(params: {
-  sessionId: string
-  userId: string
-  username: string
-  publicKey: string
-  signature: string
-  message: string
-}) {
-  const session = await getSession(params.sessionId)
-
-  if (!session) {
-    throw new Error('Session not found')
+export async function approveSession(
+  sessionId: string,
+  userData: {
+    userId: string
+    username: string
+    publicKey: string
   }
-
-  if (session.status !== 'waiting' && session.status !== 'scanned') {
-    throw new Error(`Session cannot be approved (status: ${session.status})`)
-  }
-
-  if (Date.now() > session.expiresAt.getTime()) {
-    await expireSession(params.sessionId)
-    throw new Error('Session expired')
-  }
-
-  // Verify signature
-  const isValid = await verifySignature(
-    params.message,
-    params.signature,
-    params.publicKey
-  )
-
-  if (!isValid) {
-    throw new Error('Invalid signature')
-  }
-
-  // Verify challenge is included in message
-  if (!params.message.includes(session.challenge)) {
-    throw new Error('Challenge mismatch')
-  }
-
-  // Generate session token
+) {
   const sessionToken = generateSessionToken()
+  const now = new Date()
 
-  // Update session
-  await db
+  const [updated] = await db
     .update(authSessions)
     .set({
       status: 'approved',
-      userId: params.userId,
-      username: params.username,
-      publicKey: params.publicKey,
+      userId: userData.userId,
+      username: userData.username,
+      publicKey: userData.publicKey,
       sessionToken,
-      approvedAt: new Date(),
+      approvedAt: now,
     })
-    .where(eq(authSessions.id, params.sessionId))
+    .where(eq(authSessions.id, sessionId))
+    .returning()
 
-  return {
-    sessionToken,
-    returnUrl: session.returnUrl,
-  }
+  return updated || null
 }
 
 /**
  * Reject session
  */
-export async function rejectSession(sessionId: string) {
-  await db
+export async function rejectSession(sessionId: string, reason?: string) {
+  const [updated] = await db
     .update(authSessions)
-    .set({ status: 'rejected' })
+    .set({
+      status: 'rejected',
+    })
     .where(eq(authSessions.id, sessionId))
+    .returning()
+
+  return updated || null
 }
 
 /**
- * Expire session
+ * Mark session as expired (cleanup job)
  */
 export async function expireSession(sessionId: string) {
-  await db
+  const [updated] = await db
     .update(authSessions)
-    .set({ status: 'expired' })
+    .set({
+      status: 'expired',
+    })
     .where(eq(authSessions.id, sessionId))
+    .returning()
+
+  return updated || null
 }
 
 /**
- * Validate session token and get user info
+ * Clean up expired sessions (batch operation)
+ * Should be run periodically (e.g., every minute)
  */
-export async function validateSessionToken(sessionToken: string) {
-  const [session] = await db
-    .select()
-    .from(authSessions)
+export async function cleanupExpiredSessions() {
+  const now = new Date().toISOString()
+
+  const expired = await db
+    .update(authSessions)
+    .set({ status: 'expired' })
     .where(
       and(
-        eq(authSessions.sessionToken, sessionToken),
-        eq(authSessions.status, 'approved')
+        lt(authSessions.expiresAt, now),
+        eq(authSessions.status, 'waiting')
       )
     )
-    .limit(1)
+    .returning()
+
+  return expired.length
+}
+
+/**
+ * Verify session token is valid
+ */
+export async function verifySessionToken(token: string) {
+  const session = await getSessionByToken(token)
 
   if (!session) {
-    return null
+    return { valid: false, reason: 'Session not found' }
   }
 
-  // Check if session is expired (30 days after approval)
+  if (session.status !== 'approved') {
+    return { valid: false, reason: 'Session not approved' }
+  }
+
+  // Check if session token is expired (24 hours from approval)
   if (session.approvedAt) {
-    const expirationTime = session.approvedAt.getTime() + SESSION_TOKEN_EXPIRATION_MS
-    if (Date.now() > expirationTime) {
-      await expireSession(session.id)
-      return null
+    const tokenExpiresAt = new Date(
+      session.approvedAt.getTime() + SESSION_TOKEN_EXPIRY_MS
+    )
+
+    if (new Date() > tokenExpiresAt) {
+      return { valid: false, reason: 'Session token expired' }
     }
   }
 
   return {
-    sessionId: session.id,
+    valid: true,
     userId: session.userId,
     username: session.username,
     publicKey: session.publicKey,
+    expiresAt: session.approvedAt
+      ? new Date(session.approvedAt.getTime() + SESSION_TOKEN_EXPIRY_MS)
+      : null,
   }
-}
-
-/**
- * Revoke session (logout)
- */
-export async function revokeSession(sessionId: string) {
-  await db
-    .update(authSessions)
-    .set({
-      status: 'expired',
-      sessionToken: null, // Clear token
-    })
-    .where(eq(authSessions.id, sessionId))
-}
-
-/**
- * Clean up expired sessions (garbage collection)
- */
-export async function cleanupExpiredSessions() {
-  const now = new Date()
-
-  const result = await db
-    .update(authSessions)
-    .set({ status: 'expired' })
-    .where(
-      and(
-        eq(authSessions.status, 'waiting'),
-        lt(authSessions.expiresAt, now)
-      )
-    )
-
-  return result
-}
-
-/**
- * Get active sessions for a user
- */
-export async function getUserSessions(userId: string) {
-  const sessions = await db
-    .select({
-      id: authSessions.id,
-      appName: authSessions.appName,
-      approvedAt: authSessions.approvedAt,
-      scannedAt: authSessions.scannedAt,
-    })
-    .from(authSessions)
-    .where(
-      and(
-        eq(authSessions.userId, userId),
-        eq(authSessions.status, 'approved')
-      )
-    )
-    .orderBy(authSessions.approvedAt)
-
-  return sessions
 }

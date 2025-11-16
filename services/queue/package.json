@@ -1,0 +1,16 @@
+{
+  "name": "@tana/queue",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "High-performance transaction queue service using Redis Streams",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "ioredis": "^5.8.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

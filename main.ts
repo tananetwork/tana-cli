@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from 'commander'
-import * as core from './core/index'
+import * as commands from './commands/index'
 
 const program = new Command()
 
@@ -24,7 +24,7 @@ newCommand
   .command('chain <name>')
   .description('Create a new blockchain (you become the genesis leader)')
   .action(async (name: string) => {
-    await core.newChain(name)
+    await commands.newChain(name)
   })
 
 newCommand
@@ -32,7 +32,7 @@ newCommand
   .description('Create a new node to join an existing chain')
   .option('--connect <url>', 'Chain URL to connect to')
   .action(async (options) => {
-    await core.newNode(options.connect)
+    await commands.newNode(options.connect)
   })
 
 newCommand
@@ -40,15 +40,16 @@ newCommand
   .description('Create a new user account')
   .option('-n, --name <name>', 'Display name')
   .option('-b, --bio <bio>', 'User bio')
+  .option('-r, --role <role>', 'User role (sovereign, staff, or user)', 'user')
   .action(async (username: string, options) => {
-    await core.newUser(username, options)
+    await commands.newUser(username, options)
   })
 
 newCommand
   .command('contract [name]')
   .description('Scaffold a new smart contract')
   .action(async (name?: string) => {
-    await core.newContract(name)
+    await commands.newContract(name)
   })
 
 // ============================================================================
@@ -67,7 +68,7 @@ deployCommand
   .description('Deploy user account to blockchain')
   .option('-t, --target <url>', 'Target chain URL')
   .action(async (username: string, options) => {
-    await core.deployUser(username, options.target)
+    await commands.deployUser(username, options.target)
   })
 
 deployCommand
@@ -75,7 +76,7 @@ deployCommand
   .description('Deploy smart contract to blockchain')
   .option('-t, --target <url>', 'Target chain URL')
   .action(async (path: string, options) => {
-    await core.deployContract(path, options.target)
+    await commands.deployContract(path, options.target)
   })
 
 // ============================================================================
@@ -87,14 +88,14 @@ program
   .description('Start local chain/node services')
   .option('-c, --chain <name>', 'Specific chain to start')
   .action(async (options) => {
-    await core.start(options.chain)
+    await commands.start(options.chain)
   })
 
 program
   .command('stop')
   .description('Stop running services')
   .action(async () => {
-    await core.stop()
+    await commands.stop()
   })
 
 program

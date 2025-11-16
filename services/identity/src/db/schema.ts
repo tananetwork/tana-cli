@@ -1,11 +1,10 @@
 /**
  * Tana Identity Service Database Schema
  *
- * Handles user authentication, sessions, and device management
- * Separate from blockchain data (ledger service)
+ * Authentication sessions for QR code-based mobile authentication
  */
 
-import { pgTable, text, timestamp, pgEnum } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, jsonb, pgEnum } from 'drizzle-orm/pg-core'
 
 // ============================================================================
 // ENUMS
@@ -19,89 +18,46 @@ export const authSessionStatusEnum = pgEnum('auth_session_status', [
   'expired'
 ])
 
-export const transactionRequestStatusEnum = pgEnum('transaction_request_status', [
-  'pending',
-  'approved',
-  'rejected',
-  'expired'
-])
-
 // ============================================================================
-// AUTH SESSIONS (QR Code Login)
+// AUTH SESSIONS
 // ============================================================================
 
+/**
+ * Auth Sessions Table
+ *
+ * Manages QR code authentication sessions for mobile-first authentication.
+ * Desktop/web generates a session, displays QR code, mobile app scans and approves.
+ */
 export const authSessions = pgTable('auth_sessions', {
-  id: text('id').primaryKey(), // sess_abc123
-  challenge: text('challenge').notNull().unique(), // Random challenge to be signed
+  // Session identification
+  id: text('id').primaryKey(), // sess_xxxxx format
+  challenge: text('challenge').notNull().unique(), // Random 32-byte hex string to be signed
+
+  // Session status
   status: authSessionStatusEnum('status').notNull().default('waiting'),
 
-  // User info from blockchain (set after approval)
-  userId: text('user_id'), // UUID from blockchain
-  username: text('username'),
-  publicKey: text('public_key'),
+  // User info (populated after approval)
+  userId: text('user_id'), // Blockchain user ID
+  username: text('username'), // Blockchain username
+  publicKey: text('public_key'), // Ed25519 public key (hex)
 
-  // Session token (generated after approval)
+  // Session token (generated after approval for subsequent API calls)
   sessionToken: text('session_token').unique(),
 
-  // App info
-  returnUrl: text('return_url').notNull(),
-  appName: text('app_name'),
-  appIcon: text('app_icon'),
+  // App info (provided by the requesting application)
+  returnUrl: text('return_url').notNull(), // Where to redirect after login
+  appName: text('app_name'), // Name of the app requesting auth
+  appIcon: text('app_icon'), // Optional app icon URL
 
   // Timestamps
   createdAt: timestamp('created_at').notNull().defaultNow(),
-  expiresAt: timestamp('expires_at').notNull(),
+  expiresAt: timestamp('expires_at').notNull(), // 5 minutes from creation
   approvedAt: timestamp('approved_at'),
   scannedAt: timestamp('scanned_at'),
 })
 
-// ============================================================================
-// TRANSACTION REQUESTS (Mobile Transaction Approval)
-// ============================================================================
-
-export const transactionRequests = pgTable('transaction_requests', {
-  id: text('id').primaryKey(), // txreq_abc123
-  sessionId: text('session_id').notNull().references(() => authSessions.id),
-
-  // User from blockchain
-  userId: text('user_id').notNull(),
-
-  // Transaction details
-  transactionType: text('transaction_type').notNull(), // transfer, contract_call, etc.
-  transactionData: text('transaction_data').notNull(), // JSON string of tx data
-
-  // Status
-  status: transactionRequestStatusEnum('status').notNull().default('pending'),
-
-  // Result (after approval)
-  transactionId: text('transaction_id'), // Actual blockchain tx ID
-
-  // Timestamps
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  expiresAt: timestamp('expires_at').notNull(),
-  respondedAt: timestamp('responded_at'),
-})
-
-// ============================================================================
-// DEVICE TOKENS (Push Notifications)
-// ============================================================================
-
-export const deviceTokens = pgTable('device_tokens', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(), // Blockchain user ID
-
-  // Push notification token
-  pushToken: text('push_token').notNull().unique(),
-
-  // Device info
-  deviceName: text('device_name'),
-  platform: text('platform'), // ios, android
-  appVersion: text('app_version'),
-
-  // Active status
-  isActive: text('is_active').notNull().default('true'),
-
-  // Timestamps
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  lastUsedAt: timestamp('last_used_at').notNull().defaultNow(),
-})
+// Indexes for performance
+// Note: In a real migration, these would be separate CREATE INDEX statements
+// export const authSessionsStatusIdx = index('idx_auth_sessions_status').on(authSessions.status)
+// export const authSessionsExpiresAtIdx = index('idx_auth_sessions_expires_at').on(authSessions.expiresAt)
+// export const authSessionsTokenIdx = index('idx_auth_sessions_token').on(authSessions.sessionToken)

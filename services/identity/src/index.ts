@@ -1,14 +1,18 @@
 /**
  * Tana Identity Service
  *
- * Handles user authentication, QR code login sessions, and mobile device management
- * Separate from blockchain data (ledger service)
+ * Main entry point for the authentication API server
  */
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
+import { prettyJSON } from 'hono/pretty-json'
+
+// Import routes
 import authRoutes from './api/routes/auth'
+
+// Import session cleanup
 import { cleanupExpiredSessions } from './auth/session'
 
 const app = new Hono()
@@ -17,58 +21,126 @@ const app = new Hono()
 // MIDDLEWARE
 // ============================================================================
 
-// CORS - Allow requests from web apps
-app.use('/*', cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:4321',
-    'http://localhost:5173',
-  ],
+app.use('*', logger())
+app.use('*', prettyJSON())
+app.use('*', cors({
+  origin: '*', // Allow all origins in development
   credentials: true,
 }))
 
-// Request logging
-app.use('*', logger())
-
 // ============================================================================
-// ROUTES
+// HEALTH CHECK
 // ============================================================================
 
-// Health check
-app.get('/health', (c) => {
+app.get('/', (c) => {
   return c.json({
     service: 'tana-identity',
+    version: '0.1.0',
     status: 'healthy',
     timestamp: new Date().toISOString(),
   })
 })
 
-// Auth routes
+app.get('/health', (c) => {
+  return c.json({ status: 'ok' })
+})
+
+// ============================================================================
+// API ROUTES
+// ============================================================================
+
 app.route('/auth', authRoutes)
+
+// User events endpoint
+app.get('/users/:userId/events', async (c) => {
+  try {
+    const userId = c.req.param('userId')
+    const limit = parseInt(c.req.query('limit') || '10')
+
+    const { db } = await import('./db')
+    const { authSessions } = await import('./db/schema')
+    const { desc, eq } = await import('drizzle-orm')
+
+    // Get approved auth sessions for this user
+    const sessions = await db
+      .select({
+        id: authSessions.id,
+        appName: authSessions.appName,
+        appIcon: authSessions.appIcon,
+        createdAt: authSessions.createdAt,
+        approvedAt: authSessions.approvedAt,
+      })
+      .from(authSessions)
+      .where(eq(authSessions.userId, userId))
+      .orderBy(desc(authSessions.approvedAt))
+      .limit(limit)
+
+    // Map to event format
+    const events = sessions.map(session => ({
+      id: session.id,
+      type: 'login',
+      description: `Logged into ${session.appName || 'application'}`,
+      appName: session.appName,
+      appIcon: session.appIcon,
+      timestamp: session.approvedAt || session.createdAt,
+    }))
+
+    return c.json({ events })
+  } catch (error: any) {
+    console.error('Failed to fetch user events:', error)
+    return c.json({ events: [] }, 500)
+  }
+})
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+app.onError((err, c) => {
+  console.error('Error:', err.message)
+  console.error(err.stack)
+
+  return c.json({
+    error: err.message || 'Internal Server Error',
+    timestamp: new Date().toISOString(),
+  }, 500)
+})
 
 // ============================================================================
 // SESSION CLEANUP
 // ============================================================================
 
-// Clean up expired sessions every minute
-setInterval(async () => {
-  try {
-    await cleanupExpiredSessions()
-  } catch (error) {
-    console.error('Failed to cleanup expired sessions:', error)
-  }
-}, 60 * 1000)
+/**
+ * Periodically clean up expired sessions
+ * Runs every minute
+ */
+function startCleanupTask() {
+  setInterval(async () => {
+    try {
+      const expired = await cleanupExpiredSessions()
+      if (expired > 0) {
+        console.log('Cleaned up', expired, 'expired sessions')
+      }
+    } catch (error) {
+      console.error('Error cleaning up expired sessions:', error)
+    }
+  }, 60 * 1000) // Every 60 seconds
+}
 
 // ============================================================================
-// SERVER
+// START SERVER
 // ============================================================================
 
-const PORT = parseInt(process.env.IDENTITY_PORT || '8090')
+const port = parseInt(process.env.IDENTITY_PORT || process.env.PORT || '8090')
 
-console.log(`🔐 Tana Identity Service`)
-console.log(`📡 Starting server on port ${PORT}...`)
+console.log('Tana Identity Service starting on port', port)
+console.log('Database:', process.env.IDENTITY_DB_URL || process.env.DATABASE_URL || 'Using default connection')
+
+// Start cleanup task
+startCleanupTask()
+console.log('Session cleanup task started')
 
 export default {
-  port: PORT,
+  port,
   fetch: app.fetch,
 }

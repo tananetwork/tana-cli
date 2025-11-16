@@ -1,20 +1,21 @@
 /**
- * Database connection for Identity Service
+ * Database connection and client
  */
 
-import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
 import * as schema from './schema'
 
-// Database URL from environment
-const databaseUrl = process.env.IDENTITY_DB_URL || process.env.DATABASE_URL
+// Database connection string
+const connectionString = process.env.IDENTITY_DB_URL ||
+  process.env.DATABASE_URL ||
+  'postgres://tana:tana_dev_password@localhost:5432/tana'
 
-if (!databaseUrl) {
-  throw new Error('IDENTITY_DB_URL or DATABASE_URL must be set')
-}
-
-// Create postgres connection
-const client = postgres(databaseUrl)
+// Create postgres client
+export const client = postgres(connectionString)
 
 // Create drizzle instance
 export const db = drizzle(client, { schema })
+
+// Export schema for use in queries
+export * from './schema'
