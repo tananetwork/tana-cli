@@ -70,12 +70,25 @@ export async function executeContractSecurely(
     }
   }
 
+  // Preprocess contract code: Strip export keywords
+  // The runtime wraps code in an IIFE where exports aren't allowed
+  const preprocessedCode = code
+    .split('\n')
+    .map(line => {
+      // Strip export keyword from function declarations
+      if (line.match(/^\s*export\s+(async\s+)?function\s+/)) {
+        return line.replace(/^\s*export\s+/, '')
+      }
+      return line
+    })
+    .join('\n')
+
   // Write contract code to temp file (tana-runtime expects a file path)
   const tmpDir = '/tmp/tana-contracts'
   await Bun.$`mkdir -p ${tmpDir}`
 
   const tmpFile = `${tmpDir}/contract-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`
-  await Bun.write(tmpFile, code)
+  await Bun.write(tmpFile, preprocessedCode)
 
   try {
     // Spawn tana-runtime subprocess with contract file

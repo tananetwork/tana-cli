@@ -14,6 +14,7 @@ import { consumeTransactions, acknowledgeTransactions } from '@tana/queue'
 import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { validateJsonReturn } from '../../../../utils/contract-validator'
+import { executeContractSecurely } from '../../../../commands/run/contract'
 
 const SYSTEM_PRODUCER_ID = '00000000-0000-0000-0000-000000000000'
 
@@ -75,318 +76,6 @@ async function loadCoreContract(contractName: string): Promise<string> {
   // Core contracts are at ../../../contracts/core from cli/services/ledger
   const contractPath = join(process.cwd(), '../../../contracts/core', `${contractName}.ts`)
   return await readFile(contractPath, 'utf-8')
-}
-
-/**
- * Execute contract code using Bun's VM
- * This provides the tana:* modules and execution context
- */
-async function executeContract(
-  code: string,
-  context: {
-    owner: { id: string; username: string; publicKey: string }
-    caller: { id: string; username: string; publicKey: string; nonce: number } | null
-    block: { height: number; timestamp: number; hash: string; producer: string }
-    input: any
-    contractName: string  // Added for KV namespace isolation
-  },
-  gasTracker: { gasUsed: number }  // Track gas consumption during execution
-): Promise<any> {
-  // Create tana/block module with database-backed operations
-  const blockModule = {
-    async getUser(userId: string) {
-      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
-      if (!user) return null
-      return {
-        id: user.id,
-        username: user.username,
-        publicKey: user.publicKey,
-        displayName: user.displayName,
-        role: user.role,
-      }
-    },
-
-    async getBalance(userId: string, currencyCode: string) {
-      const [balance] = await db
-        .select()
-        .from(balances)
-        .where(and(eq(balances.ownerId, userId), eq(balances.currencyCode, currencyCode)))
-        .limit(1)
-
-      if (!balance) return null
-      return {
-        amount: balance.amount,
-        currencyCode: balance.currencyCode,
-        ownerId: balance.ownerId,
-      }
-    },
-  }
-
-  // Create tana/context module
-  const contextModule = {
-    owner: () => context.owner,
-    caller: () => context.caller,
-    block: () => context.block,
-    input: () => context.input,
-  }
-
-  // Create tana/core module with console utilities
-  const coreModule = {
-    log(...args: any[]) {
-      console.log(...args)
-    },
-  }
-
-  // Create tana/kv module (Cloudflare KV-inspired API)
-  const kvModule = {
-    /**
-     * Get a value from the KV store
-     * @param key - The key to retrieve
-     * @param type - Optional return type: 'text' (default), 'json', 'arrayBuffer', 'stream'
-     * @returns The value, or null if not found
-     */
-    async get(key: string, type: 'text' | 'json' | 'arrayBuffer' | 'stream' = 'json'): Promise<any> {
-      // Validate key length
-      const keyBytes = new TextEncoder().encode(key).length
-      if (keyBytes > MAX_KEY_LENGTH) {
-        throw new Error(`Key too long: ${keyBytes} bytes (max ${MAX_KEY_LENGTH})`)
-      }
-
-      // Query the database
-      const [result] = await db
-        .select()
-        .from(contractStorage)
-        .where(
-          and(
-            eq(contractStorage.contractName, context.contractName),
-            eq(contractStorage.key, key)
-          )
-        )
-        .limit(1)
-
-      if (!result) return null
-
-      // Update access tracking
-      await db
-        .update(contractStorage)
-        .set({
-          accessCount: sql`${contractStorage.accessCount} + 1`,
-          lastAccessedAt: new Date(),
-        })
-        .where(eq(contractStorage.id, result.id))
-
-      // Track gas
-      gasTracker.gasUsed += STORAGE_READ_GAS
-
-      // Parse and return based on type
-      if (type === 'text') {
-        return result.value
-      } else if (type === 'json') {
-        try {
-          return JSON.parse(result.value)
-        } catch {
-          return result.value
-        }
-      } else if (type === 'arrayBuffer') {
-        return new TextEncoder().encode(result.value).buffer
-      } else if (type === 'stream') {
-        // For streams, return a ReadableStream-like object
-        // In practice, this would be more complex
-        return result.value
-      }
-
-      return JSON.parse(result.value)
-    },
-
-    /**
-     * Store a key-value pair
-     * @param key - The key to store
-     * @param value - The value (string, object, or anything JSON-serializable)
-     * @param options - Optional metadata (expirationTtl, etc.)
-     */
-    async put(key: string, value: any, options?: { expirationTtl?: number }): Promise<void> {
-      // Validate key length
-      const keyBytes = new TextEncoder().encode(key).length
-      if (keyBytes > MAX_KEY_LENGTH) {
-        throw new Error(`Key too long: ${keyBytes} bytes (max ${MAX_KEY_LENGTH})`)
-      }
-
-      // Serialize value
-      const valueStr = typeof value === 'string' ? value : JSON.stringify(value)
-      const valueBytes = new TextEncoder().encode(valueStr).length
-
-      // Validate value size
-      if (valueBytes > MAX_VALUE_SIZE) {
-        throw new Error(`Value too large: ${valueBytes} bytes (max ${MAX_VALUE_SIZE} bytes)`)
-      }
-
-      // Check total storage for this contract
-      const [storageStats] = await db
-        .select({ total: sql<number>`COALESCE(SUM(${contractStorage.sizeBytes}), 0)` })
-        .from(contractStorage)
-        .where(eq(contractStorage.contractName, context.contractName))
-
-      const currentStorage = storageStats?.total || 0
-      if (currentStorage + valueBytes > MAX_STORAGE_PER_CONTRACT) {
-        throw new Error(
-          `Contract storage limit exceeded: ${currentStorage + valueBytes} bytes (max ${MAX_STORAGE_PER_CONTRACT} bytes)`
-        )
-      }
-
-      // Determine value type
-      const valueType = typeof value === 'string' ? 'string' : Array.isArray(value) ? 'array' : typeof value
-
-      // Upsert to database
-      await db
-        .insert(contractStorage)
-        .values({
-          contractName: context.contractName,
-          key,
-          value: valueStr,
-          sizeBytes: valueBytes,
-          valueType,
-          accessCount: 1,
-          lastAccessedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [contractStorage.contractName, contractStorage.key],
-          set: {
-            value: valueStr,
-            sizeBytes: valueBytes,
-            valueType,
-            accessCount: sql`${contractStorage.accessCount} + 1`,
-            lastAccessedAt: new Date(),
-            updatedAt: new Date(),
-          },
-        })
-
-      // Track gas
-      gasTracker.gasUsed += STORAGE_WRITE_GAS + valueBytes * STORAGE_BYTE_GAS
-    },
-
-    /**
-     * Delete a key from the KV store
-     * @param key - The key to delete
-     */
-    async delete(key: string): Promise<void> {
-      await db
-        .delete(contractStorage)
-        .where(
-          and(
-            eq(contractStorage.contractName, context.contractName),
-            eq(contractStorage.key, key)
-          )
-        )
-
-      // Track gas
-      gasTracker.gasUsed += STORAGE_DELETE_GAS
-    },
-
-    /**
-     * List all keys in the KV store
-     * @param options - Optional prefix filter and cursor for pagination
-     * @returns Object with keys array and optional cursor for pagination
-     */
-    async list(options?: {
-      prefix?: string
-      limit?: number
-      cursor?: string
-    }): Promise<{ keys: Array<{ name: string; metadata?: any }>; list_complete: boolean; cursor?: string }> {
-      const limit = options?.limit || 1000
-      const prefix = options?.prefix
-
-      // Build query
-      let query = db
-        .select({
-          key: contractStorage.key,
-          sizeBytes: contractStorage.sizeBytes,
-          createdAt: contractStorage.createdAt,
-        })
-        .from(contractStorage)
-        .where(eq(contractStorage.contractName, context.contractName))
-        .limit(limit + 1) // Get one extra to determine if there are more
-
-      // Add prefix filter if provided
-      if (prefix) {
-        query = query.where(sql`${contractStorage.key} LIKE ${prefix + '%'}`)
-      }
-
-      // Execute query
-      const results = await query
-
-      // Check if there are more results
-      const hasMore = results.length > limit
-      const keys = (hasMore ? results.slice(0, limit) : results).map(r => ({
-        name: r.key,
-        metadata: {
-          size: r.sizeBytes,
-          createdAt: r.createdAt,
-        },
-      }))
-
-      // Track gas
-      gasTracker.gasUsed += STORAGE_LIST_GAS * keys.length
-
-      return {
-        keys,
-        list_complete: !hasMore,
-        cursor: hasMore ? keys[keys.length - 1].name : undefined,
-      }
-    },
-  }
-
-  // Create tana modules
-  const tanaModules = {
-    'tana/context': { context: contextModule },
-    'tana/block': { block: blockModule },
-    'tana/core': { console: coreModule },
-    'tana/kv': { kv: kvModule },
-  }
-
-  // Import resolver
-  function __tanaImport(spec: string) {
-    const mod = (tanaModules as any)[spec]
-    if (!mod) throw new Error(`Unknown module: ${spec}`)
-    return mod
-  }
-
-  // Rewrite import statements and strip TypeScript-only syntax
-  const rewrittenCode = code
-    .split('\n')
-    .map(line => {
-      // Strip TypeScript type imports (import type ...)
-      if (line.match(/^\s*import\s+type\s+/)) {
-        return ''
-      }
-
-      // Strip export keyword from function declarations
-      if (line.match(/^\s*export\s+(async\s+)?function\s+/)) {
-        return line.replace(/^\s*export\s+/, '')
-      }
-
-      // Match tana/ import formats and convert to variable assignment
-      const match = line.match(/^\s*import\s+\{([^}]+)\}\s+from\s+["'](tana\/[^"']+)["'];?\s*$/)
-      if (!match) return line
-      const names = match[1].trim()
-      const spec = match[2].trim()
-      return `const {${names}} = __tanaImport('${spec}');`
-    })
-    .filter(line => line.length > 0) // Remove empty lines
-    .join('\n')
-
-  try {
-    // Execute contract code
-    // The contract exports a function, so we need to evaluate the code and call the exported function
-    const AsyncFunction = (async function () {}).constructor as any
-    const fn = new AsyncFunction('__tanaImport', `
-      ${rewrittenCode}
-      return await contract();
-    `)
-    const result = await fn(__tanaImport)
-    return result
-  } catch (error: any) {
-    throw new Error(`Contract execution failed: ${error.message}`)
-  }
 }
 
 async function produceBlock() {
@@ -563,7 +252,7 @@ async function produceBlock() {
 
             // Execute init() function if present
             if (initCode) {
-              console.log(`  ⚙️  Executing init() function...`)
+              console.log(`  ⚙️  Executing init() function securely (isolated subprocess)...`)
 
               // Build execution context for init()
               const initContext = {
@@ -579,19 +268,29 @@ async function produceBlock() {
                   hash: '', // Will be calculated after block creation
                   producer: SYSTEM_PRODUCER_ID
                 },
-                input: null
+                input: null,
+                contractName: contractData.name
               }
 
-              // Execute init() via runtime
-              const initResult = await executeContract(initCode, initContext)
+              // Execute init() via secure tana-runtime subprocess
+              const initResult = await executeContractSecurely(initCode, initContext)
+
+              if (!initResult.success) {
+                throw new Error(`init() execution failed: ${initResult.error}`)
+              }
+
+              // Track gas from execution
+              if (initResult.gasUsed) {
+                gasUsed += initResult.gasUsed
+              }
 
               // Validate result is JSON-serializable (or void for init)
-              const validation = validateJsonReturn(initResult, 'init')
+              const validation = validateJsonReturn(initResult.result, 'init')
               if (!validation.valid) {
                 throw new Error(`init() validation failed: ${validation.error}`)
               }
 
-              console.log(`  ✓ init() executed successfully`)
+              console.log(`  ✓ init() executed successfully (isolated)`)
             }
 
             // Deploy the contract with all fields
@@ -689,7 +388,7 @@ async function produceBlock() {
               throw new Error(`Contract owner not found: ${contract.ownerId}`)
             }
 
-            console.log(`  ⚙️  Executing contract: ${contract.name}`)
+            console.log(`  ⚙️  Executing contract securely (isolated subprocess): ${contract.name}`)
 
             // Build execution context
             const contractContext = {
@@ -710,20 +409,31 @@ async function produceBlock() {
                 hash: '', // Will be calculated after block creation
                 producer: SYSTEM_PRODUCER_ID
               },
-              input: tx.contractInput || null
+              input: tx.contractInput || null,
+              contractName: contract.name
             }
 
-            // Execute contract() function
-            const result = await executeContract(contract.contractCode, contractContext)
+            // Execute contract() function via secure tana-runtime subprocess
+            const contractResult = await executeContractSecurely(contract.contractCode, contractContext)
+
+            if (!contractResult.success) {
+              throw new Error(`contract() execution failed: ${contractResult.error}`)
+            }
+
+            // Track gas from execution
+            if (contractResult.gasUsed) {
+              gasUsed += contractResult.gasUsed
+            } else {
+              gasUsed += GAS_PER_TX * 5 // Fallback: Contract calls cost more gas
+            }
 
             // Validate JSON return
-            const validation = validateJsonReturn(result, 'contract')
+            const validation = validateJsonReturn(contractResult.result, 'contract')
             if (!validation.valid) {
               throw new Error(`contract() validation failed: ${validation.error}`)
             }
 
-            console.log(`  ✓ Contract executed successfully: ${contract.name}`)
-            gasUsed += GAS_PER_TX * 5 // Contract calls cost more gas
+            console.log(`  ✓ Contract executed successfully (isolated): ${contract.name}`)
             break
           }
 
@@ -732,7 +442,7 @@ async function produceBlock() {
               throw new Error('Invalid transfer: missing amount or currency')
             }
 
-            console.log(`  🔄 Executing core transfer contract...`)
+            console.log(`  🔄 Executing core transfer contract securely (isolated subprocess)...`)
 
             // Load and execute core transfer contract
             const transferContractCode = await loadCoreContract('transfer')
@@ -772,11 +482,23 @@ async function produceBlock() {
                 to: tx.to,
                 amount: tx.amount.toString(),
                 currencyCode: tx.currencyCode
-              }
+              },
+              contractName: 'transfer'
             }
 
-            // Execute core contract
-            const contractResult = await executeContract(transferContractCode, contractContext)
+            // Execute core contract via secure tana-runtime subprocess
+            const coreContractResult = await executeContractSecurely(transferContractCode, contractContext)
+
+            if (!coreContractResult.success) {
+              throw new Error(`Transfer contract execution failed: ${coreContractResult.error}`)
+            }
+
+            // Track gas from execution
+            if (coreContractResult.gasUsed) {
+              gasUsed += coreContractResult.gasUsed
+            }
+
+            const contractResult = coreContractResult.result
 
             if (!contractResult || !contractResult.success) {
               throw new Error('Transfer contract did not return success')
