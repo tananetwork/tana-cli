@@ -12,21 +12,18 @@ import { existsSync, realpathSync } from 'fs'
 import path from 'path'
 
 /**
- * Find the bun executable and resolve symlinks
+ * Find the bun executable
+ * IMPORTANT: Do NOT resolve symlinks, as compiled binaries will embed
+ * the resolved path, which breaks when bun is upgraded to a new version
  */
 function getBunPath(): string {
   // Try to find bun in PATH
   const bunPath = which('bun')
   if (bunPath) {
-    try {
-      // Resolve symlink to real path
-      return realpathSync(bunPath)
-    } catch {
-      return bunPath
-    }
+    return bunPath
   }
 
-  // Common installation paths
+  // Common installation paths (check if they exist)
   const commonPaths = [
     '/opt/homebrew/bin/bun',  // macOS Homebrew
     '/usr/local/bin/bun',      // Linux/macOS
@@ -35,12 +32,7 @@ function getBunPath(): string {
 
   for (const checkPath of commonPaths) {
     if (existsSync(checkPath)) {
-      try {
-        // Resolve symlink to real path
-        return realpathSync(checkPath)
-      } catch {
-        return checkPath
-      }
+      return checkPath
     }
   }
 
@@ -109,10 +101,10 @@ async function startServiceProcess(config: ServiceConfig): Promise<Subprocess> {
     ...config.env
   }
 
-  const bunPath = getBunPath()
-
+  // Use 'bun' directly and let PATH resolve it
+  // This prevents issues with compiled binaries embedding stale paths
   const proc = spawn({
-    cmd: [bunPath, 'run', 'start'],
+    cmd: ['bun', 'run', 'start'],
     cwd: config.cwd,
     env,
     stdout: 'pipe',
