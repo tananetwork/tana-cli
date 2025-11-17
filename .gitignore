@@ -47,3 +47,22 @@ jspm_packages/
 # To avoid uploading test build artifacts
 .gild/
 .gildtest/
+
+# NPM package artifacts (binaries and credentials)
+npm/*/tana
+npm/*/tana.exe
+npm/*/tana-runtime
+npm/*/tana-runtime.exe
+npm/*/tana-edge
+npm/*/tana-edge.exe
+npm/*/.npmrc
+npm/*/package.json.tmp
+
+# Bun build cache
+.*.bun-build
+
+# Compiled binaries
+dist/
+
+# Development databases
+services/mesh/mesh.db

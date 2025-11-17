@@ -1,0 +1,392 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ============================================================================
+  # Build Binaries for Each Platform
+  # ============================================================================
+
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+          path: cli
+
+      - name: Checkout Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-runtime
+          path: runtime
+
+      - name: Checkout Edge
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-edge
+          path: edge
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node dependencies
+        working-directory: cli
+        run: bun install
+
+      - name: Build CLI binary
+        working-directory: cli
+        run: bun build ./main.ts --compile --outfile dist/tana
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build tana-runtime
+        working-directory: runtime
+        run: cargo build --release
+
+      - name: Build tana-edge
+        working-directory: edge
+        run: cargo build --release
+
+      - name: Copy binaries to dist
+        run: |
+          mkdir -p dist
+          cp cli/dist/tana dist/
+          cp runtime/target/release/tana-runtime dist/
+          cp edge/target/release/tana-edge dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tana-linux-x64
+          path: dist/
+
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+          path: cli
+
+      - name: Checkout Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-runtime
+          path: runtime
+
+      - name: Checkout Edge
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-edge
+          path: edge
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node dependencies
+        working-directory: cli
+        run: bun install
+
+      - name: Build CLI binary
+        working-directory: cli
+        run: bun build ./main.ts --compile --outfile dist/tana.exe
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build tana-runtime
+        working-directory: runtime
+        run: cargo build --release
+
+      - name: Build tana-edge
+        working-directory: edge
+        run: cargo build --release
+
+      - name: Copy binaries to dist
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp cli/dist/tana.exe dist/
+          cp runtime/target/release/tana-runtime.exe dist/
+          cp edge/target/release/tana-edge.exe dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tana-windows-x64
+          path: dist/
+
+  build-darwin-x64:
+    runs-on: macos-13  # Intel Mac
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+          path: cli
+
+      - name: Checkout Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-runtime
+          path: runtime
+
+      - name: Checkout Edge
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-edge
+          path: edge
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node dependencies
+        working-directory: cli
+        run: bun install
+
+      - name: Build CLI binary (x64)
+        working-directory: cli
+        run: bun build ./main.ts --compile --target=bun-darwin-x64 --outfile dist/tana
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build tana-runtime
+        working-directory: runtime
+        run: cargo build --release
+
+      - name: Build tana-edge
+        working-directory: edge
+        run: cargo build --release
+
+      - name: Copy binaries to dist
+        run: |
+          mkdir -p dist
+          cp cli/dist/tana dist/
+          cp runtime/target/release/tana-runtime dist/
+          cp edge/target/release/tana-edge dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tana-darwin-x64
+          path: dist/
+
+  build-darwin-arm64:
+    runs-on: macos-latest  # ARM Mac
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+          path: cli
+
+      - name: Checkout Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-runtime
+          path: runtime
+
+      - name: Checkout Edge
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-edge
+          path: edge
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node dependencies
+        working-directory: cli
+        run: bun install
+
+      - name: Build CLI binary (ARM64)
+        working-directory: cli
+        run: bun build ./main.ts --compile --target=bun-darwin-arm64 --outfile dist/tana
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build tana-runtime
+        working-directory: runtime
+        run: cargo build --release
+
+      - name: Build tana-edge
+        working-directory: edge
+        run: cargo build --release
+
+      - name: Copy binaries to dist
+        run: |
+          mkdir -p dist
+          cp cli/dist/tana dist/
+          cp runtime/target/release/tana-runtime dist/
+          cp edge/target/release/tana-edge dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tana-darwin-arm64
+          path: dist/
+
+  # ============================================================================
+  # Publish Platform-Specific Packages to NPM
+  # ============================================================================
+
+  publish-linux-x64:
+    needs: build-linux-x64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tana-linux-x64
+          path: binaries
+
+      - name: Update package version
+        run: |
+          cd npm/tana-linux-x64
+          jq '.version = "${{ github.ref_name }}" | del(.version | select(startswith("v"))) | .version |= ltrimstr("v")' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Copy binaries
+        run: |
+          cp binaries/tana npm/tana-linux-x64/
+          cp binaries/tana-runtime npm/tana-linux-x64/
+          cp binaries/tana-edge npm/tana-linux-x64/
+          chmod +x npm/tana-linux-x64/tana*
+
+      - name: Publish to NPM
+        run: |
+          cd npm/tana-linux-x64
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          npm publish --access public
+
+  publish-windows-x64:
+    needs: build-windows-x64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tana-windows-x64
+          path: binaries
+
+      - name: Update package version
+        run: |
+          cd npm/tana-windows-x64
+          jq '.version = "${{ github.ref_name }}" | del(.version | select(startswith("v"))) | .version |= ltrimstr("v")' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Copy binaries
+        run: |
+          cp binaries/tana.exe npm/tana-windows-x64/
+          cp binaries/tana-runtime.exe npm/tana-windows-x64/
+          cp binaries/tana-edge.exe npm/tana-windows-x64/
+
+      - name: Publish to NPM
+        run: |
+          cd npm/tana-windows-x64
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          npm publish --access public
+
+  publish-darwin-x64:
+    needs: build-darwin-x64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tana-darwin-x64
+          path: binaries
+
+      - name: Update package version
+        run: |
+          cd npm/tana-darwin-x64
+          jq '.version = "${{ github.ref_name }}" | del(.version | select(startswith("v"))) | .version |= ltrimstr("v")' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Copy binaries
+        run: |
+          cp binaries/tana npm/tana-darwin-x64/
+          cp binaries/tana-runtime npm/tana-darwin-x64/
+          cp binaries/tana-edge npm/tana-darwin-x64/
+          chmod +x npm/tana-darwin-x64/tana*
+
+      - name: Publish to NPM
+        run: |
+          cd npm/tana-darwin-x64
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          npm publish --access public
+
+  publish-darwin-arm64:
+    needs: build-darwin-arm64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tana-darwin-arm64
+          path: binaries
+
+      - name: Update package version
+        run: |
+          cd npm/tana-darwin-arm64
+          jq '.version = "${{ github.ref_name }}" | del(.version | select(startswith("v"))) | .version |= ltrimstr("v")' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Copy binaries
+        run: |
+          cp binaries/tana npm/tana-darwin-arm64/
+          cp binaries/tana-runtime npm/tana-darwin-arm64/
+          cp binaries/tana-edge npm/tana-darwin-arm64/
+          chmod +x npm/tana-darwin-arm64/tana*
+
+      - name: Publish to NPM
+        run: |
+          cd npm/tana-darwin-arm64
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          npm publish --access public
+
+  # ============================================================================
+  # Publish Main Package
+  # ============================================================================
+
+  publish-main:
+    needs: [publish-linux-x64, publish-windows-x64, publish-darwin-x64, publish-darwin-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CLI
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-cli
+
+      - name: Update package version
+        run: |
+          cd npm/tana
+          jq '.version = "${{ github.ref_name }}" | del(.version | select(startswith("v"))) | .version |= ltrimstr("v")' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Publish to NPM
+        run: |
+          cd npm/tana
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          npm publish --access public

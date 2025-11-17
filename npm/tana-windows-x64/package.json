@@ -1,0 +1,19 @@
+{
+  "name": "@tananetwork/tana-windows-x64",
+  "version": "0.1.0",
+  "description": "Tana CLI - Windows x64 platform-specific distribution",
+  "bin": {
+    "tana": "./tana.exe",
+    "tana-runtime": "./tana-runtime.exe",
+    "tana-edge": "./tana-edge.exe"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tananetwork/tana-cli.git"
+  },
+  "keywords": ["blockchain", "smart-contracts", "cli", "tana"],
+  "author": "Tana Network",
+  "license": "Apache-2.0"
+}

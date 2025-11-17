@@ -1,0 +1,19 @@
+{
+  "name": "@tananetwork/tana-darwin-arm64",
+  "version": "0.1.0",
+  "description": "Tana CLI - macOS ARM64 platform-specific distribution",
+  "bin": {
+    "tana": "./tana",
+    "tana-runtime": "./tana-runtime",
+    "tana-edge": "./tana-edge"
+  },
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tananetwork/tana-cli.git"
+  },
+  "keywords": ["blockchain", "smart-contracts", "cli", "tana"],
+  "author": "Tana Network",
+  "license": "Apache-2.0"
+}
