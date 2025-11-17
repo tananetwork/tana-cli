@@ -114,18 +114,42 @@ app.onError((err, c) => {
 
 const port = parseInt(process.env.PORT || '8080')
 
-console.log(`🚀 Tana Ledger Service starting on port ${port}`)
-console.log(`📊 Database: ${process.env.DATABASE_URL ? 'Connected' : 'Using default connection'}`)
+// ============================================================================
+// DEPENDENCY CHECKS
+// ============================================================================
 
-// Initialize Redis streams for transaction queue
-initializeRedisStreams()
-  .then(() => {
-    console.log(`✓ Transaction queue initialized`)
-  })
-  .catch((err) => {
-    console.error('Failed to initialize Redis streams:', err)
-    console.error('Transactions will not be queued. Please check Redis connection.')
-  })
+async function checkDependencies() {
+  const errors: string[] = []
+
+  // Check database connection
+  if (!process.env.DATABASE_URL) {
+    errors.push('DATABASE_URL environment variable not set')
+  }
+
+  // Check Redis connection by attempting to initialize streams
+  try {
+    await initializeRedisStreams()
+    console.log(`✓ Transaction queue initialized (Redis connected)`)
+  } catch (err: any) {
+    errors.push(`Redis connection failed: ${err.message}`)
+  }
+
+  if (errors.length > 0) {
+    console.error('\n❌ Ledger service failed to start - missing dependencies:\n')
+    errors.forEach(error => console.error(`   • ${error}`))
+    console.error('\n💡 To start infrastructure services:')
+    console.error('   docker-compose up -d postgres redis')
+    console.error('   OR')
+    console.error('   cd dev-env && ./dev.sh\n')
+    process.exit(1)
+  }
+}
+
+// Initialize dependencies before starting server
+await checkDependencies()
+
+console.log(`🚀 Tana Ledger Service starting on port ${port}`)
+console.log(`📊 Database: Connected`)
 
 // Start heartbeat automation for mesh network coordination
 startHeartbeat()
@@ -133,8 +157,8 @@ startHeartbeat()
     console.log(`✓ Heartbeat automation ready`)
   })
   .catch((err) => {
-    console.error('Failed to start heartbeat:', err)
-    console.error('Mesh network coordination disabled.')
+    console.error('❌ Heartbeat failed (404):', err)
+    console.error('Note: This is expected if validator is not registered with mesh yet.')
   })
 
 export default {

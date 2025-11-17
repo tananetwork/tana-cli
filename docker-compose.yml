@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: tana-postgres
+    environment:
+      POSTGRES_USER: tana
+      POSTGRES_PASSWORD: tana_dev_password
+      POSTGRES_DB: tana
+    ports:
+      - "5432:5432"
+    volumes:
+      - tana-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tana"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tana-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - tana-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tana-postgres-data:
+  tana-redis-data:

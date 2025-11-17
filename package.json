@@ -13,7 +13,11 @@
   ],
   "scripts": {
     "dev": "bun run ./main.ts",
-    "make": "bun build ./main.ts --compile --outfile dist/tana"
+    "make": "bun build ./main.ts --compile --outfile dist/tana",
+    "db:up": "docker-compose up -d",
+    "db:down": "docker-compose down",
+    "db:restart": "docker-compose restart",
+    "db:logs": "docker-compose logs -f"
   },
   "devDependencies": {
     "@types/bun": "^1.1.9",
