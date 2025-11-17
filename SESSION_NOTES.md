@@ -430,7 +430,52 @@ cd services/mesh && bun run dev
 
 ---
 
-**Session End:** 11:XX PM PST
+## 📝 Session 2 Update - November 17, 2024 (Evening)
+
+### Testing & Bug Fixes
+
+**End-to-End Mesh Workflow Test**
+- ✅ Successfully tested complete registration → approval → activation flow
+- ✅ Registered 2 validators in dev mode (validator-1, validator-2)
+- ✅ Verified sovereign approval workflow
+- ✅ Confirmed both validators transitioned to active status
+
+**Critical Bugs Fixed**
+
+1. **Keypair Generation Bug** (`commands/mesh/register.ts:28-41`)
+   - Issue: `ed.utils.randomPrivateKey()` not available in Bun compiled binary
+   - Fix: Use `crypto.randomBytes(32)` instead
+   - Impact: CLI binary now generates keys reliably
+
+2. **Multi-Validator Key Collision** (`commands/mesh/register.ts:49-72`)
+   - Issue: Multiple validators shared same keys → UNIQUE constraint failures
+   - Fix: Node-specific key files (`node-key-{nodeId}.json`, `{nodeId}-{service}-key.json`)
+   - Impact: Enables local multi-validator testing
+
+3. **Hono v4 API Incompatibility** (`services/mesh/src/index.ts:184,222`)
+   - Issue: `c.param()` undefined in route handlers
+   - Fix: Updated to `c.req.param()` (Hono v4 specification)
+   - Impact: Approval/denial endpoints now functional
+
+**Commit Added**
+```
+56e320f - fix(mesh): node-specific keys and Hono v4 API compatibility
+```
+
+**Test Results**
+```bash
+# Successful workflow:
+tana mesh register --dev --node-id validator-1
+tana mesh register --dev --node-id validator-2 --port-offset 100
+tana mesh list --all  # Shows 2 pending
+tana mesh approve validator-1
+tana mesh approve validator-2
+tana mesh list  # Shows 2 active ✅
+```
+
+---
+
+**Session End:** 7:30 PM PST (November 17, 2024)
 **Next Session:** Continue with heartbeat automation and VM testing preparation
 
 Great work today! 🚀
