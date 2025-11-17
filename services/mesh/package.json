@@ -10,7 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@tananetwork/crypto": "link:@tananetwork/crypto",
+    "@tananetwork/crypto": "^0.1.0",
     "hono": "^4.0.0"
   },
   "devDependencies": {
