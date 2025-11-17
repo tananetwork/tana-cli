@@ -31,6 +31,12 @@ jobs:
           repository: tananetwork/tana-edge
           path: edge
 
+      - name: Checkout Types
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-types
+          path: types
+
       - uses: oven-sh/setup-bun@v2
 
       - name: Install Node dependencies
@@ -85,6 +91,12 @@ jobs:
         with:
           repository: tananetwork/tana-edge
           path: edge
+
+      - name: Checkout Types
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-types
+          path: types
 
       - uses: oven-sh/setup-bun@v2
 
@@ -142,6 +154,12 @@ jobs:
           repository: tananetwork/tana-edge
           path: edge
 
+      - name: Checkout Types
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-types
+          path: types
+
       - uses: oven-sh/setup-bun@v2
 
       - name: Install Node dependencies
@@ -196,6 +214,12 @@ jobs:
         with:
           repository: tananetwork/tana-edge
           path: edge
+
+      - name: Checkout Types
+        uses: actions/checkout@v4
+        with:
+          repository: tananetwork/tana-types
+          path: types
 
       - uses: oven-sh/setup-bun@v2
 
