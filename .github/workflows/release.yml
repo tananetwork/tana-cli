@@ -35,7 +35,7 @@ jobs:
 
       - name: Install Node dependencies
         working-directory: cli
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build CLI binary
         working-directory: cli
@@ -90,7 +90,7 @@ jobs:
 
       - name: Install Node dependencies
         working-directory: cli
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build CLI binary
         working-directory: cli
@@ -146,7 +146,7 @@ jobs:
 
       - name: Install Node dependencies
         working-directory: cli
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build CLI binary (x64)
         working-directory: cli
@@ -201,7 +201,7 @@ jobs:
 
       - name: Install Node dependencies
         working-directory: cli
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build CLI binary (ARM64)
         working-directory: cli
