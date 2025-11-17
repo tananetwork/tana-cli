@@ -18,6 +18,7 @@
     "blockchain:flush": "bun run src/scripts/flush-blockchain.ts",
     "blockchain:genesis": "bun run src/scripts/create-genesis.ts",
     "blockchain:produce": "bun run src/scripts/produce-block.ts",
+    "blockchain:verify": "bun run src/scripts/verify-blockchain.ts",
     "blockchain:listen": "bun run src/events/block-listener.ts",
     "pending": "bun run src/scripts/produce-block.ts",
     "block": "bun run src/scripts/produce-block.ts",

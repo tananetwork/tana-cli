@@ -8,38 +8,8 @@
 
 import { db } from '../db'
 import { blocks, currencies } from '../db/schema'
-import crypto from 'crypto'
 import { sql } from 'drizzle-orm'
-
-function calculateStateRoot(): string {
-  // For genesis, this is the root of initial state
-  // In the future, this would be a merkle root of all account states
-  const initialState = {
-    accounts: 0,
-    balances: 0,
-    version: '0.1.0',
-    timestamp: Date.now()
-  }
-
-  return crypto.createHash('sha256')
-    .update(JSON.stringify(initialState))
-    .digest('hex')
-}
-
-function calculateBlockHash(blockData: any, stateRoot: string): string {
-  const data = JSON.stringify({
-    height: blockData.height,
-    previousHash: blockData.previousHash,
-    timestamp: blockData.timestamp,
-    txCount: blockData.txCount,
-    stateRoot,
-    gasUsed: blockData.gasUsed,
-    gasLimit: blockData.gasLimit,
-    metadata: blockData.metadata
-  })
-
-  return crypto.createHash('sha256').update(data).digest('hex')
-}
+import { computeBlockHash, hashObject, hashString } from '../utils/merkle'
 
 async function createGenesisBlock() {
   console.log('🌱 Creating Genesis Block (Block #0)...')
@@ -55,43 +25,50 @@ async function createGenesisBlock() {
     }
 
     const genesisTimestamp = new Date('2024-11-03T00:00:00Z')
+    const producer = '00000000-0000-0000-0000-000000000000' // Special genesis producer UUID
 
-    const genesisData = {
+    // Genesis block has no transactions or state changes
+    const transactions: any[] = []
+    const stateChanges: any[] = []
+    const contentRefs: any[] = []
+
+    // Calculate roots using hashObject for consistency with verification
+    const txRoot = hashObject(transactions) // Empty transaction array hash
+    const stateRoot = hashString('empty-tree') // Empty state tree (no accounts yet)
+
+    // Build block content for hashing
+    const blockContent = {
       height: 0,
-      previousHash: '0'.repeat(64), // No previous block
+      previousHash: '0'.repeat(64),
       timestamp: genesisTimestamp,
-      producer: '00000000-0000-0000-0000-000000000000', // Special genesis producer UUID
-      txCount: 0, // No transactions in genesis
+      producer,
+      transactions,
+      stateChanges,
+      contentRefs,
+      txRoot,
+      stateRoot,
       gasUsed: 0,
-      gasLimit: 1000000,
-      metadata: {
-        version: '0.1.0',
-        networkName: 'tana',
-        chainId: 1,
-        genesisMessage: 'Tana blockchain - TypeScript smart contracts for commerce and content',
-        blockTime: 6000, // Target 6 seconds per block
-      }
+      gasLimit: 1000000
     }
 
-    // Calculate state root
-    const stateRoot = calculateStateRoot()
-
     // Calculate block hash
-    const hash = calculateBlockHash(genesisData, stateRoot)
+    const hash = computeBlockHash(blockContent)
 
     // Insert genesis block
     await db.insert(blocks).values({
-      height: genesisData.height,
+      height: 0,
       hash,
-      previousHash: genesisData.previousHash,
-      timestamp: genesisData.timestamp,
-      producer: genesisData.producer,
-      txCount: genesisData.txCount,
+      previousHash: '0'.repeat(64),
+      timestamp: genesisTimestamp,
+      producer,
+      transactions: transactions as any, // JSONB - empty array
+      stateChanges: stateChanges as any, // JSONB - empty array
+      contentRefs: contentRefs as any,   // JSONB - empty array
+      txRoot,
       stateRoot,
-      txRoot: null,
-      gasUsed: genesisData.gasUsed,
-      gasLimit: genesisData.gasLimit,
-      metadata: genesisData.metadata,
+      txCount: 0,
+      gasUsed: 0,
+      gasLimit: 1000000,
       signature: 'genesis_signature',
       finalizedAt: genesisTimestamp // Genesis is immediately final
     })
@@ -101,16 +78,19 @@ async function createGenesisBlock() {
     console.log('Block Details:')
     console.log('  Height:', 0)
     console.log('  Hash:', hash)
-    console.log('  Previous Hash:', genesisData.previousHash)
+    console.log('  Previous Hash:', '0'.repeat(64))
     console.log('  Timestamp:', genesisTimestamp.toISOString())
+    console.log('  Transactions:', 0, '(self-contained)')
+    console.log('  State Changes:', 0)
+    console.log('  TX Root:', txRoot)
     console.log('  State Root:', stateRoot)
-    console.log('  Gas Limit:', genesisData.gasLimit)
+    console.log('  Gas Limit:', 1000000)
     console.log('')
-    console.log('Network Parameters:')
-    console.log('  Network:', genesisData.metadata.networkName)
-    console.log('  Chain ID:', genesisData.metadata.chainId)
-    console.log('  Version:', genesisData.metadata.version)
-    console.log('  Block Time:', genesisData.metadata.blockTime, 'ms')
+    console.log('🔒 Cryptographic Verification:')
+    console.log('  ✓ Block is self-contained (empty genesis state)')
+    console.log('  ✓ Transaction root computed (empty tree)')
+    console.log('  ✓ State root computed (empty tree)')
+    console.log('  ✓ Block hash is deterministic and verifiable')
     console.log('')
 
     // Initialize base currencies

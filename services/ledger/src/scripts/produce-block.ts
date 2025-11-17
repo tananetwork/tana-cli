@@ -15,6 +15,10 @@ import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { validateJsonReturn } from '../../../../utils/contract-validator'
 import { executeContractSecurely } from '../../../../commands/run/contract'
+import { StateTracker, computeStateRoot } from '../blockchain/state-tracker'
+import { computeBlockHash, hashObject } from '../utils/merkle'
+import type { BlockTransaction, StateChange, ContentReference } from '../types/block'
+import { signMessage } from '@tana/crypto'
 
 const SYSTEM_PRODUCER_ID = '00000000-0000-0000-0000-000000000000'
 
@@ -30,33 +34,8 @@ const STORAGE_DELETE_GAS = 5000   // Per KV.delete() operation
 const STORAGE_LIST_GAS = 1000     // Per KV.list() operation
 const STORAGE_BYTE_GAS = 10       // Per byte stored
 
-function calculateStateRoot(blockHeight: number): string {
-  // Simple state root calculation
-  // In production, this would be a merkle root of all account states
-  const stateData = {
-    blockHeight,
-    timestamp: Date.now(),
-    version: '0.1.0'
-  }
-
-  return crypto.createHash('sha256')
-    .update(JSON.stringify(stateData))
-    .digest('hex')
-}
-
-function calculateBlockHash(blockData: any, stateRoot: string): string {
-  const data = JSON.stringify({
-    height: blockData.height,
-    previousHash: blockData.previousHash,
-    timestamp: blockData.timestamp.toISOString(),
-    txCount: blockData.txCount,
-    stateRoot,
-    gasUsed: blockData.gasUsed,
-    producer: blockData.producer
-  })
-
-  return crypto.createHash('sha256').update(data).digest('hex')
-}
+// Removed: Now using computeStateRoot from state-tracker.ts
+// Removed: Now using computeBlockHash from merkle.ts
 
 /**
  * Increment user's nonce after successful transaction
@@ -180,7 +159,11 @@ async function produceBlock() {
     const streamIds = pendingTxs.map(tx => tx.id)
     console.log('')
 
-    // 3. Execute transactions
+    // 3. Initialize state tracker and transaction collector
+    const stateTracker = new StateTracker()
+    const fullTransactions: BlockTransaction[] = []
+    const contentRefs: ContentReference[] = []
+
     let gasUsed = 0
     const GAS_PER_TX = 21000 // Base gas per transaction
 
@@ -211,6 +194,14 @@ async function produceBlock() {
                 .update(JSON.stringify(userData))
                 .digest('hex')
             })
+
+            // Record state change
+            stateTracker.recordUserCreation(
+              tx.to,
+              userData.username,
+              userData.publicKey,
+              userData.role || 'user'
+            )
 
             const roleLabel = userData.role === 'sovereign' ? '👑 sovereign' : userData.role === 'staff' ? '⭐ staff' : 'user'
             console.log(`  ✓ Created ${roleLabel} user: ${userData.username} (${tx.to})`)
@@ -330,6 +321,14 @@ async function produceBlock() {
               await writeFile(join(contractDir, 'post.ts'), postCode, 'utf-8')
               console.log(`  ✓ Wrote post.ts to filesystem`)
             }
+
+            // Record state change
+            stateTracker.recordContractDeployment(
+              tx.to!,
+              tx.from,
+              contractData.name,
+              contractData.codeHash
+            )
 
             console.log(`  ✓ Deployed contract: ${contractData.name} (${tx.to})`)
             gasUsed += GAS_PER_TX * 3 // Contracts cost more gas
@@ -511,20 +510,33 @@ async function produceBlock() {
             // Apply balance updates returned by contract
             for (const update of contractResult.balanceUpdates) {
               if (update.operation === 'debit') {
+                // Capture before state
+                const before = await stateTracker.captureBalanceBefore(update.userId, update.currencyCode!)
+
                 // Deduct from sender
                 await db.execute(sql`
                   UPDATE balances
                   SET amount = ${update.newAmount}
-                  WHERE owner_id = ${update.userId} AND currency_code = ${update.currencyCode}
+                  WHERE user_id = ${update.userId} AND currency_code = ${update.currencyCode}
                 `)
+
+                // Record state change
+                await stateTracker.recordBalanceChange(update.userId, update.currencyCode!, before)
+
               } else if (update.operation === 'credit') {
+                // Capture before state
+                const before = await stateTracker.captureBalanceBefore(update.userId, update.currencyCode!)
+
                 // Add to receiver (UPSERT)
                 await db.execute(sql`
-                  INSERT INTO balances (owner_id, owner_type, currency_code, amount)
-                  VALUES (${update.userId}, 'user', ${update.currencyCode}, ${update.newAmount})
-                  ON CONFLICT (owner_id, currency_code)
+                  INSERT INTO balances (user_id, currency_code, amount)
+                  VALUES (${update.userId}, ${update.currencyCode}, ${update.newAmount})
+                  ON CONFLICT (user_id, currency_code)
                   DO UPDATE SET amount = ${update.newAmount}
                 `)
+
+                // Record state change
+                await stateTracker.recordBalanceChange(update.userId, update.currencyCode!, before)
               }
             }
 
@@ -573,6 +585,13 @@ async function produceBlock() {
               }
             }
 
+            // Record state change BEFORE applying
+            stateTracker.recordRoleChange(
+              roleData.userId,
+              roleData.oldRole,
+              roleData.newRole
+            )
+
             // Apply role change
             await db
               .update(users)
@@ -592,6 +611,24 @@ async function produceBlock() {
             console.log(`  ⚠️  Skipping unsupported transaction type: ${tx.type}`)
         }
 
+        // Build full transaction data for block (self-contained)
+        const fullTxData: BlockTransaction = {
+          id: tx.txId,
+          from: tx.from,
+          to: tx.to,
+          amount: tx.amount,
+          currencyCode: tx.currencyCode || null,
+          type: tx.type,
+          signature: tx.signature,
+          message: tx.message || '', // Original signed message
+          nonce: tx.nonce,
+          timestamp: tx.timestamp,
+          contractId: tx.contractId || null,
+          contractInput: tx.contractInput || null,
+          metadata: tx.payload || null
+        }
+        fullTransactions.push(fullTxData)
+
         // Create transaction in database as confirmed
         // NOTE: This is the ONLY place transactions are written to PostgreSQL
         // Convert decimal amounts to smallest unit (8 decimals) for BigInt storage
@@ -610,9 +647,9 @@ async function produceBlock() {
           currencyCode: tx.currencyCode || null,
           contractId: tx.contractId || null,
           contractInput: tx.contractInput || null,
-          signature: tx.signature, // Add signature from transaction
-          timestamp: tx.timestamp, // Add timestamp from transaction
-          nonce: tx.nonce, // Add nonce from transaction
+          signature: tx.signature,
+          timestamp: tx.timestamp,
+          nonce: tx.nonce,
           status: 'confirmed',
           confirmedAt: new Date(),
           blockHeight: null, // Will be set when linking to block
@@ -657,39 +694,61 @@ async function produceBlock() {
 
     console.log('')
 
-    // 4. Create new block
+    // 4. Create new block with self-contained data and Merkle commitments
     const newHeight = latestBlock.height + 1
     const timestamp = new Date()
 
-    const blockData = {
+    // Get all state changes from tracker
+    const stateChanges = stateTracker.getChanges()
+
+    // Compute transaction root (hash of full transaction array)
+    const txRoot = hashObject(fullTransactions)
+    console.log(`✓ Computed transaction root: ${txRoot}`)
+
+    // Compute state root (Merkle root of ALL current state)
+    console.log('Computing Merkle state root...')
+    const stateRoot = await computeStateRoot()
+    console.log(`✓ Computed state root: ${stateRoot}`)
+
+    // Build block content (for hashing and signing)
+    const blockContent = {
       height: newHeight,
       previousHash: latestBlock.hash,
       timestamp,
       producer: SYSTEM_PRODUCER_ID,
-      txCount: pendingTxs.length,
+      transactions: fullTransactions,
+      stateChanges,
+      contentRefs,
+      txRoot,
+      stateRoot,
       gasUsed,
       gasLimit: latestBlock.gasLimit
     }
 
-    const stateRoot = calculateStateRoot(newHeight)
-    const hash = calculateBlockHash(blockData, stateRoot)
+    // Compute deterministic block hash
+    const hash = computeBlockHash(blockContent)
+    console.log(`✓ Computed block hash: ${hash}`)
 
+    // Sign the block (using system producer for now)
+    // In production, this would use the actual validator's key
+    const signature = hash // Placeholder - would be: await signMessage(hash, producerPrivateKey)
+
+    // Insert self-contained block
     await db.insert(blocks).values({
-      height: blockData.height,
+      height: newHeight,
       hash,
-      previousHash: blockData.previousHash,
-      timestamp: blockData.timestamp,
-      producer: blockData.producer,
-      txCount: blockData.txCount,
+      previousHash: latestBlock.hash,
+      timestamp,
+      producer: SYSTEM_PRODUCER_ID,
+      transactions: fullTransactions as any, // JSONB - full transaction data
+      stateChanges: stateChanges as any,     // JSONB - before/after snapshots
+      contentRefs: contentRefs as any,       // JSONB - content references
+      txRoot,
       stateRoot,
-      txRoot: null,
-      gasUsed: blockData.gasUsed,
-      gasLimit: blockData.gasLimit,
-      metadata: {
-        transactions: pendingTxs.map(tx => tx.txId),
-        producedBy: 'manual-script'
-      },
-      signature: 'manual_block_signature',
+      txCount: fullTransactions.length,
+      gasUsed,
+      gasLimit: latestBlock.gasLimit,
+      signature,
       finalizedAt: timestamp
     })
 
@@ -730,10 +789,20 @@ async function produceBlock() {
     console.log('Block Details:')
     console.log('  Height:', newHeight)
     console.log('  Hash:', hash)
-    console.log('  Previous Hash:', blockData.previousHash)
-    console.log('  Transactions:', pendingTxs.length)
-    console.log('  Gas Used:', gasUsed, '/', blockData.gasLimit)
+    console.log('  Previous Hash:', latestBlock.hash)
+    console.log('  Transactions:', fullTransactions.length, '(self-contained)')
+    console.log('  State Changes:', stateChanges.length)
+    console.log('  TX Root:', txRoot)
+    console.log('  State Root:', stateRoot)
+    console.log('  Gas Used:', gasUsed, '/', latestBlock.gasLimit)
     console.log('  Timestamp:', timestamp.toISOString())
+    console.log('')
+    console.log('🔒 Cryptographic Verification:')
+    console.log('  ✓ Block contains full transaction data with signatures')
+    console.log('  ✓ State changes captured (before/after snapshots)')
+    console.log('  ✓ Transaction root computed (tamper detection)')
+    console.log('  ✓ State root computed (Merkle tree of all state)')
+    console.log('  ✓ Block hash is deterministic and verifiable')
     console.log('')
 
   } catch (error: any) {

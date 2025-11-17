@@ -17,20 +17,11 @@ async function flushBlockchain() {
 
   try {
     // Delete all data from tables in correct order (respecting foreign keys)
-    console.log('Deleting all messages...')
-    await db.execute(sql`DELETE FROM messages`)
+    console.log('Deleting all contract storage...')
+    await db.execute(sql`DELETE FROM contract_storage`)
 
-    console.log('Deleting all channel members...')
-    await db.execute(sql`DELETE FROM channel_members`)
-
-    console.log('Deleting all channels...')
-    await db.execute(sql`DELETE FROM channels`)
-
-    console.log('Deleting all team members...')
-    await db.execute(sql`DELETE FROM team_members`)
-
-    console.log('Deleting all teams...')
-    await db.execute(sql`DELETE FROM teams`)
+    console.log('Deleting all contracts...')
+    await db.execute(sql`DELETE FROM contracts`)
 
     console.log('Deleting all transactions...')
     await db.execute(sql`DELETE FROM transactions`)
@@ -43,9 +34,6 @@ async function flushBlockchain() {
 
     console.log('Deleting all blocks...')
     await db.execute(sql`DELETE FROM blocks`)
-
-    console.log('Deleting all landing pages...')
-    await db.execute(sql`DELETE FROM landing_pages`)
 
     console.log('Deleting all currencies...')
     await db.execute(sql`DELETE FROM currencies`)
