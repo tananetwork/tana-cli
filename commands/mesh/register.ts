@@ -7,6 +7,7 @@
 import { Command } from 'commander'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { randomBytes } from 'crypto'
 import path from 'path'
 import os from 'os'
 import * as ed from '@noble/ed25519'
@@ -14,7 +15,6 @@ import { signMessage } from '../../utils/crypto'
 
 const MESH_URL = process.env.MESH_URL || 'http://mesh:8190'
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'tana')
-const NODE_KEY_PATH = path.join(CONFIG_DIR, 'node-key.json')
 
 interface NodeKey {
   nodeId: string
@@ -26,10 +26,11 @@ interface NodeKey {
  * Generate Ed25519 keypair
  */
 async function generateKeypair(): Promise<{ publicKey: string; privateKey: string }> {
-  const privateKeyBytes = ed.utils.randomPrivateKey()
+  // Generate 32 random bytes for private key
+  const privateKeyBytes = randomBytes(32)
   const publicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes)
 
-  const privateKey = Buffer.from(privateKeyBytes).toString('hex')
+  const privateKey = privateKeyBytes.toString('hex')
   const publicKey = Buffer.from(publicKeyBytes).toString('hex')
 
   return {
@@ -45,9 +46,12 @@ async function getOrGenerateNodeKey(nodeId: string): Promise<NodeKey> {
   // Ensure config directory exists
   mkdirSync(CONFIG_DIR, { recursive: true })
 
+  // Use node-specific key file to allow multiple validators on same machine
+  const nodeKeyPath = path.join(CONFIG_DIR, `node-key-${nodeId}.json`)
+
   // Check if key exists
-  if (existsSync(NODE_KEY_PATH)) {
-    const existing = JSON.parse(readFileSync(NODE_KEY_PATH, 'utf-8'))
+  if (existsSync(nodeKeyPath)) {
+    const existing = JSON.parse(readFileSync(nodeKeyPath, 'utf-8'))
     console.log(`✓ Using existing node key: ${existing.publicKey.slice(0, 16)}...`)
     return existing
   }
@@ -62,7 +66,7 @@ async function getOrGenerateNodeKey(nodeId: string): Promise<NodeKey> {
     privateKey: keypair.privateKey
   }
 
-  writeFileSync(NODE_KEY_PATH, JSON.stringify(nodeKey, null, 2))
+  writeFileSync(nodeKeyPath, JSON.stringify(nodeKey, null, 2))
   console.log(`✓ Node key generated: ${nodeKey.publicKey.slice(0, 16)}...`)
 
   return nodeKey
@@ -71,8 +75,9 @@ async function getOrGenerateNodeKey(nodeId: string): Promise<NodeKey> {
 /**
  * Get or generate service keypair
  */
-async function getOrGenerateServiceKey(serviceType: string): Promise<{ publicKey: string, privateKey: string }> {
-  const keyPath = path.join(CONFIG_DIR, `${serviceType}-key.json`)
+async function getOrGenerateServiceKey(nodeId: string, serviceType: string): Promise<{ publicKey: string, privateKey: string }> {
+  // Use node-specific service key file for dev mode multi-validator support
+  const keyPath = path.join(CONFIG_DIR, `${nodeId}-${serviceType}-key.json`)
 
   if (existsSync(keyPath)) {
     const existing = JSON.parse(readFileSync(keyPath, 'utf-8'))
@@ -193,7 +198,7 @@ export const registerCommand = new Command('register')
     const serviceKeys = await Promise.all(
       services.map(async s => ({
         ...s,
-        ...(await getOrGenerateServiceKey(s.type))
+        ...(await getOrGenerateServiceKey(nodeId, s.type))
       }))
     )
 

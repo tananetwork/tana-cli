@@ -181,7 +181,7 @@ interface ApprovalRequest {
 
 app.post('/approve/:nodeId', async (c) => {
   try {
-    const nodeId = c.param('nodeId')
+    const nodeId = c.req.param('nodeId')
     const body = await c.req.json() as ApprovalRequest
 
     // Verify approver is sovereign
@@ -219,7 +219,7 @@ app.post('/approve/:nodeId', async (c) => {
 
 app.post('/deny/:nodeId', async (c) => {
   try {
-    const nodeId = c.param('nodeId')
+    const nodeId = c.req.param('nodeId')
     const body = await c.req.json() as ApprovalRequest
 
     // Verify approver is sovereign
