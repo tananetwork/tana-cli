@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.2.0",
-    "@tana/crypto": "workspace:*",
+    "@tana/crypto": "file:../../tana-crypto",
     "drizzle-orm": "^0.30.0",
     "hono": "^4.0.0",
     "nanoid": "^5.0.0",
