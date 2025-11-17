@@ -315,38 +315,6 @@ This separation ensures all state changes go through blockchain consensus.`,
 }
 
 /**
- * Validate that runtime contract files (init/contract) don't export HTTP handlers
- *
- * This is informational/educational - returns a warning instead of blocking.
- */
-export function validateRuntimeExports(
-  sourceCode: string
-): { hasHttpHandlers: boolean; handlers: string[] } {
-  try {
-    const transpiler = new Bun.Transpiler({ loader: 'ts' })
-    const scanResult = transpiler.scan(sourceCode)
-    const exports = scanResult.exports || []
-
-    // Check for HTTP handler exports (case-insensitive)
-    const httpHandlers = ['get', 'post']
-    const normalizedExports = exports.map(e => e.toLowerCase())
-    const foundHandlers = exports.filter(e =>
-      httpHandlers.includes(e.toLowerCase())
-    )
-
-    return {
-      hasHttpHandlers: foundHandlers.length > 0,
-      handlers: foundHandlers
-    }
-  } catch (error) {
-    return {
-      hasHttpHandlers: false,
-      handlers: []
-    }
-  }
-}
-
-/**
  * Get all exports from a contract file (for debugging/introspection)
  */
 export function getContractExports(sourceCode: string): string[] {
