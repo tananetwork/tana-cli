@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from 'commander'
 import * as commands from './commands/index'
+import { meshCommand } from './commands/mesh'
 
 const program = new Command()
 
@@ -102,8 +103,14 @@ program
   .command('status')
   .description('Show status of running services and chains')
   .action(async () => {
-    await core.status()
+    await commands.status()
   })
+
+// ============================================================================
+// MESH COMMANDS - Network coordination
+// ============================================================================
+
+program.addCommand(meshCommand)
 
 // ============================================================================
 // UTILITY COMMANDS
@@ -113,7 +120,7 @@ program
   .command('run <contract>')
   .description('Test run a contract locally')
   .action(async (contract: string) => {
-    await core.runContract(contract)
+    await commands.runContract(contract)
   })
 
 program
@@ -121,21 +128,21 @@ program
   .description('Check user balance')
   .option('-c, --currency <code>', 'Currency code (default: USD)', 'USD')
   .action(async (user: string, options) => {
-    await core.checkBalance(user, options.currency)
+    await commands.checkBalance(user, options.currency)
   })
 
 program
   .command('transfer <from> <to> <amount> <currency>')
   .description('Transfer funds between users')
   .action(async (from: string, to: string, amount: string, currency: string) => {
-    await core.transfer(from, to, amount, currency)
+    await commands.transfer(from, to, amount, currency)
   })
 
 program
   .command('check')
   .description('Validate system requirements')
   .action(async () => {
-    await core.check()
+    await commands.check()
   })
 
 program.parse()
