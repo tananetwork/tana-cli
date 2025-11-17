@@ -1,8 +1,8 @@
 /**
  * tana start
  *
- * Starts the ledger HTTP server directly within the CLI process.
- * Runs in foreground on port 8080.
+ * Starts all Tana services (mesh, t4, ledger) in the correct order.
+ * Runs in foreground with health checks and graceful shutdown.
  */
 
 import chalk from 'chalk'
@@ -11,7 +11,7 @@ import {
   isLedgerReachable,
   getLedgerUrl
 } from '../../utils/config'
-import { startLedger } from '../ledger/server'
+import { ServiceOrchestrator } from './orchestrator'
 
 export async function start(chainName?: string) {
   console.log(chalk.bold('\n🚀 Starting Tana...\n'))
@@ -34,11 +34,7 @@ export async function start(chainName?: string) {
   console.log(chalk.gray(`Chain: ${chalk.cyan(targetChain)}`))
   console.log()
 
-  // Start ledger server
-  // DATABASE_URL will be loaded from .env file by startLedger if not set
-  await startLedger({
-    port: 8080,
-    chain: targetChain,
-    databaseUrl: process.env.DATABASE_URL || ''
-  })
+  // Start all services using orchestrator
+  const orchestrator = new ServiceOrchestrator()
+  await orchestrator.startAll()
 }
