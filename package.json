@@ -4,7 +4,6 @@
   "module": "main.ts",
   "type": "module",
   "workspaces": [
-    "packages/service-auth",
     "services/ledger",
     "services/identity",
     "services/queue",
