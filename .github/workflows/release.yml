@@ -236,7 +236,7 @@ jobs:
   # ============================================================================
 
   publish-linux-x64:
-    needs: build-linux-x64
+    needs: [build-linux-x64, build-windows-x64, build-darwin-x64, build-darwin-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout CLI
@@ -277,7 +277,7 @@ jobs:
           npm publish
 
   publish-windows-x64:
-    needs: build-windows-x64
+    needs: [build-linux-x64, build-windows-x64, build-darwin-x64, build-darwin-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout CLI
@@ -317,7 +317,7 @@ jobs:
           npm publish
 
   publish-darwin-x64:
-    needs: build-darwin-x64
+    needs: [build-linux-x64, build-windows-x64, build-darwin-x64, build-darwin-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout CLI
@@ -358,7 +358,7 @@ jobs:
           npm publish
 
   publish-darwin-arm64:
-    needs: build-darwin-arm64
+    needs: [build-linux-x64, build-windows-x64, build-darwin-x64, build-darwin-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout CLI
