@@ -46,11 +46,11 @@ jobs:
 
       - name: Build tana-runtime
         working-directory: runtime
-        run: cargo build --release
+        run: cargo build --release --bin tana-runtime
 
       - name: Build tana-edge
         working-directory: edge
-        run: cargo build --release
+        run: cargo build --release --bin tana-edge
 
       - name: Copy binaries to dist
         run: |
@@ -101,11 +101,11 @@ jobs:
 
       - name: Build tana-runtime
         working-directory: runtime
-        run: cargo build --release
+        run: cargo build --release --bin tana-runtime
 
       - name: Build tana-edge
         working-directory: edge
-        run: cargo build --release
+        run: cargo build --release --bin tana-edge
 
       - name: Copy binaries to dist
         shell: bash
@@ -157,11 +157,11 @@ jobs:
 
       - name: Build tana-runtime
         working-directory: runtime
-        run: cargo build --release
+        run: cargo build --release --bin tana-runtime
 
       - name: Build tana-edge
         working-directory: edge
-        run: cargo build --release
+        run: cargo build --release --bin tana-edge
 
       - name: Copy binaries to dist
         run: |
@@ -212,11 +212,11 @@ jobs:
 
       - name: Build tana-runtime
         working-directory: runtime
-        run: cargo build --release
+        run: cargo build --release --bin tana-runtime
 
       - name: Build tana-edge
         working-directory: edge
-        run: cargo build --release
+        run: cargo build --release --bin tana-edge
 
       - name: Copy binaries to dist
         run: |
