@@ -31,12 +31,6 @@ jobs:
           repository: tananetwork/tana-edge
           path: edge
 
-      - name: Checkout Crypto
-        uses: actions/checkout@v4
-        with:
-          repository: tananetwork/tana-crypto
-          path: crypto
-
       - uses: oven-sh/setup-bun@v2
 
       - name: Install Node dependencies
@@ -91,12 +85,6 @@ jobs:
         with:
           repository: tananetwork/tana-edge
           path: edge
-
-      - name: Checkout Crypto
-        uses: actions/checkout@v4
-        with:
-          repository: tananetwork/tana-crypto
-          path: crypto
 
       - uses: oven-sh/setup-bun@v2
 
@@ -154,12 +142,6 @@ jobs:
           repository: tananetwork/tana-edge
           path: edge
 
-      - name: Checkout Crypto
-        uses: actions/checkout@v4
-        with:
-          repository: tananetwork/tana-crypto
-          path: crypto
-
       - uses: oven-sh/setup-bun@v2
 
       - name: Install Node dependencies
@@ -214,12 +196,6 @@ jobs:
         with:
           repository: tananetwork/tana-edge
           path: edge
-
-      - name: Checkout Crypto
-        uses: actions/checkout@v4
-        with:
-          repository: tananetwork/tana-crypto
-          path: crypto
 
       - uses: oven-sh/setup-bun@v2
 
@@ -292,6 +268,14 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           npm publish --access public
 
+      - name: Publish to GitHub Packages
+        run: |
+          cd npm/tana-linux-x64
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > .npmrc
+          jq '.name = "@tananetwork/tana-linux-x64" | .publishConfig.registry = "https://npm.pkg.github.com"' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          npm publish
+
   publish-windows-x64:
     needs: build-windows-x64
     runs-on: ubuntu-latest
@@ -323,6 +307,14 @@ jobs:
           cd npm/tana-windows-x64
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           npm publish --access public
+
+      - name: Publish to GitHub Packages
+        run: |
+          cd npm/tana-windows-x64
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > .npmrc
+          jq '.name = "@tananetwork/tana-windows-x64" | .publishConfig.registry = "https://npm.pkg.github.com"' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          npm publish
 
   publish-darwin-x64:
     needs: build-darwin-x64
@@ -357,6 +349,14 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           npm publish --access public
 
+      - name: Publish to GitHub Packages
+        run: |
+          cd npm/tana-darwin-x64
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > .npmrc
+          jq '.name = "@tananetwork/tana-darwin-x64" | .publishConfig.registry = "https://npm.pkg.github.com"' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          npm publish
+
   publish-darwin-arm64:
     needs: build-darwin-arm64
     runs-on: ubuntu-latest
@@ -390,6 +390,14 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           npm publish --access public
 
+      - name: Publish to GitHub Packages
+        run: |
+          cd npm/tana-darwin-arm64
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > .npmrc
+          jq '.name = "@tananetwork/tana-darwin-arm64" | .publishConfig.registry = "https://npm.pkg.github.com"' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          npm publish
+
   # ============================================================================
   # Publish Main Package
   # ============================================================================
@@ -414,3 +422,11 @@ jobs:
           cd npm/tana
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           npm publish --access public
+
+      - name: Publish to GitHub Packages
+        run: |
+          cd npm/tana
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > .npmrc
+          jq '.name = "@tananetwork/tana" | .publishConfig.registry = "https://npm.pkg.github.com"' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          npm publish

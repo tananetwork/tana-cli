@@ -10,7 +10,7 @@
 import { db } from './src/db/index.ts'
 import { users, balances, transactions } from './src/db/schema.ts'
 import { eq, desc } from 'drizzle-orm'
-import { queueTransaction } from '@tana/queue'
+import { queueTransaction } from '@tananetwork/queue'
 import crypto from 'crypto'
 import { spawn } from 'child_process'
 import { promisify } from 'util'
