@@ -6,15 +6,52 @@
 
 import { serve } from 'bun'
 import chalk from 'chalk'
-import { spawn, type Subprocess } from 'bun'
+import { spawn, type Subprocess, which } from 'bun'
 import { homedir } from 'os'
-import { existsSync } from 'fs'
+import { existsSync, realpathSync } from 'fs'
 import path from 'path'
+
+/**
+ * Find the bun executable and resolve symlinks
+ */
+function getBunPath(): string {
+  // Try to find bun in PATH
+  const bunPath = which('bun')
+  if (bunPath) {
+    try {
+      // Resolve symlink to real path
+      return realpathSync(bunPath)
+    } catch {
+      return bunPath
+    }
+  }
+
+  // Common installation paths
+  const commonPaths = [
+    '/opt/homebrew/bin/bun',  // macOS Homebrew
+    '/usr/local/bin/bun',      // Linux/macOS
+    '/home/linuxbrew/.linuxbrew/bin/bun',  // Linux Homebrew
+  ]
+
+  for (const checkPath of commonPaths) {
+    if (existsSync(checkPath)) {
+      try {
+        // Resolve symlink to real path
+        return realpathSync(checkPath)
+      } catch {
+        return checkPath
+      }
+    }
+  }
+
+  // Fallback to 'bun' and hope it's in PATH
+  return 'bun'
+}
 
 interface ServiceConfig {
   name: string
   port: number
-  path: string
+  cwd: string  // Working directory to run from
   env?: Record<string, string>
   required: boolean
   healthCheck?: string
@@ -72,8 +109,11 @@ async function startServiceProcess(config: ServiceConfig): Promise<Subprocess> {
     ...config.env
   }
 
+  const bunPath = getBunPath()
+
   const proc = spawn({
-    cmd: ['bun', 'run', config.path],
+    cmd: [bunPath, 'run', 'start'],
+    cwd: config.cwd,
     env,
     stdout: 'pipe',
     stderr: 'pipe'
@@ -105,24 +145,24 @@ export class ServiceOrchestrator {
       {
         name: 'mesh',
         port: 8190,
-        path: new URL('../../services/mesh/src/index.ts', import.meta.url).pathname,
+        cwd: new URL('../../services/mesh', import.meta.url).pathname,
         required: true,
         healthCheck: 'http://localhost:8190/health'
       },
       {
         name: 't4',
         port: 8180,
-        path: new URL('../../services/t4/src/index.ts', import.meta.url).pathname,
+        cwd: new URL('../../services/t4', import.meta.url).pathname,
         required: true,
         healthCheck: 'http://localhost:8180/health',
         env: {
-          CONTENT_DIR: process.env.CONTENT_DIR || '/var/lib/tana/content'
+          CONTENT_DIR: process.env.CONTENT_DIR || path.join(homedir(), '.tana', 'content')
         }
       },
       {
         name: 'ledger',
         port: 8080,
-        path: new URL('../../services/ledger/src/index.ts', import.meta.url).pathname,
+        cwd: new URL('../../services/ledger', import.meta.url).pathname,
         required: true,
         healthCheck: 'http://localhost:8080/health',
         env: {
