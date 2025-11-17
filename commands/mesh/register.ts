@@ -117,27 +117,61 @@ export const registerCommand = new Command('register')
   .description('Register this machine with mesh coordinator')
   .option('--role <role>', 'Node role (validator, observer)', 'validator')
   .option('--node-id <id>', 'Custom node ID (default: auto-generated)')
+  .option('--dev', 'Development mode (fake Tailscale, use localhost)')
+  .option('--port-offset <offset>', 'Port offset for dev mode services (default: 0)', '0')
   .action(async (options) => {
     console.log('')
     console.log('🌐 Registering with mesh coordinator...')
     console.log('')
 
-    // 1. Detect Tailscale
-    console.log('1. Detecting Tailscale configuration...')
-    const tailscale = detectTailscale()
+    let tailscale: { hostname: string, ip: string }
+    let nodeId: string
 
-    if (!tailscale) {
-      console.error('❌ Tailscale not detected or not running')
-      console.error('   Run: tailscale up --hostname=<your-hostname>')
-      process.exit(1)
+    // 1. Detect or fake Tailscale
+    if (options.dev) {
+      console.log('🚧 Development mode - using fake Tailscale configuration')
+      console.log('')
+
+      // Generate unique node ID for dev mode
+      nodeId = options.nodeId || `validator-local-${Date.now().toString().slice(-6)}`
+
+      tailscale = {
+        hostname: `${nodeId}.local.ts.net`,
+        ip: '127.0.0.1'
+      }
+
+      console.log('1. Simulated Tailscale configuration:')
+      console.log(`   ✓ Hostname: ${tailscale.hostname}`)
+      console.log(`   ✓ IP: ${tailscale.ip}`)
+      console.log(`   ⚠️  This is a development configuration (not real Tailscale)`)
+      console.log('')
+    } else {
+      console.log('1. Detecting Tailscale configuration...')
+      const detected = detectTailscale()
+
+      if (!detected) {
+        console.error('❌ Tailscale not detected or not running')
+        console.error('')
+        console.error('   Options:')
+        console.error('   1. Install and start Tailscale:')
+        console.error('      tailscale up --hostname=<your-hostname>')
+        console.error('')
+        console.error('   2. Use development mode for local testing:')
+        console.error('      tana mesh register --dev --node-id validator-test')
+        console.error('')
+        process.exit(1)
+      }
+
+      tailscale = detected
+      console.log(`   ✓ Tailscale hostname: ${tailscale.hostname}`)
+      console.log(`   ✓ Tailscale IP: ${tailscale.ip}`)
+      console.log('')
+
+      // Generate node ID from Tailscale hostname
+      nodeId = options.nodeId || `validator-${tailscale.hostname.split('.')[0]}`
     }
 
-    console.log(`   ✓ Tailscale hostname: ${tailscale.hostname}`)
-    console.log(`   ✓ Tailscale IP: ${tailscale.ip}`)
-    console.log('')
-
-    // 2. Generate node ID
-    const nodeId = options.nodeId || `validator-${tailscale.hostname.split('.')[0]}`
+    // 2. Node ID
     console.log(`2. Node ID: ${nodeId}`)
     console.log('')
 
@@ -145,11 +179,16 @@ export const registerCommand = new Command('register')
     console.log('3. Loading cryptographic keys...')
     const nodeKey = await getOrGenerateNodeKey(nodeId)
 
-    // Generate service keys
+    // Generate service keys with port offset for dev mode
+    const portOffset = options.dev ? parseInt(options.portOffset || '0', 10) : 0
     const services = [
-      { type: 'ledger', port: 8080 },
-      { type: 't4', port: 8180 }
+      { type: 'ledger', port: 8080 + portOffset },
+      { type: 't4', port: 8180 + portOffset }
     ]
+
+    if (options.dev && portOffset > 0) {
+      console.log(`   ⚙️  Using port offset: +${portOffset}`)
+    }
 
     const serviceKeys = await Promise.all(
       services.map(async s => ({
