@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto'
 import * as transactionService from '../../transactions'
 import { createTransactionSchema, confirmTransactionSchema } from '../schemas'
 import { isSovereign } from '../../accounts/users'
-import { queueTransaction, publishNewTransaction } from '@tana/queue'
+import { queueTransaction, publishNewTransaction } from '@tananetwork/queue'
 
 const app = new Hono()
 

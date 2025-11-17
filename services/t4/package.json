@@ -1,5 +1,5 @@
 {
-  "name": "@tana/t4",
+  "name": "@tananetwork/t4",
   "version": "0.1.0",
   "type": "module",
   "description": "Content-addressable storage server for Tana blockchain",

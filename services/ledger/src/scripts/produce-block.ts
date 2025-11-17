@@ -10,7 +10,7 @@ import { db } from '../db'
 import { blocks, transactions, users, balances, currencies, contracts, contractStorage } from '../db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import crypto from 'crypto'
-import { consumeTransactions, acknowledgeTransactions } from '@tana/queue'
+import { consumeTransactions, acknowledgeTransactions } from '@tananetwork/queue'
 import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { validateJsonReturn } from '../../../../utils/contract-validator'
@@ -18,7 +18,7 @@ import { executeContractSecurely } from '../../../../commands/run/contract'
 import { StateTracker, computeStateRoot } from '../blockchain/state-tracker'
 import { computeBlockHash, hashObject } from '../utils/merkle'
 import type { BlockTransaction, StateChange, ContentReference } from '../types/block'
-import { signMessage } from '@tana/crypto'
+import { signMessage } from '@tananetwork/crypto'
 
 const SYSTEM_PRODUCER_ID = '00000000-0000-0000-0000-000000000000'
 
@@ -91,7 +91,7 @@ async function produceBlock() {
 
       // Clean up any stale acknowledged messages before exiting
       try {
-        const { getRedisClient, STREAM_PENDING_TX } = await import('@tana/queue')
+        const { getRedisClient, STREAM_PENDING_TX } = await import('@tananetwork/queue')
         const redis = getRedisClient()
 
         // Get all messages from the stream
@@ -767,7 +767,7 @@ async function produceBlock() {
 
     // Immediately delete the acknowledged messages to prevent accumulation
     try {
-      const { getRedisClient, STREAM_PENDING_TX } = await import('@tana/queue')
+      const { getRedisClient, STREAM_PENDING_TX } = await import('@tananetwork/queue')
       const redis = getRedisClient()
 
       // Delete all processed messages from the stream

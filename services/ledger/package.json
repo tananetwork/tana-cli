@@ -1,5 +1,5 @@
 {
-  "name": "@tana/ledger",
+  "name": "@tananetwork/ledger",
   "version": "0.1.0",
   "type": "module",
   "description": "Tana ledger service - User accounts, balances, and transactions",
@@ -28,8 +28,8 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.2.0",
-    "@tana/crypto": "file:../../../tana-crypto",
-    "@tana/queue": "workspace:*",
+    "@tananetwork/crypto": "file:../../../tana-crypto",
+    "@tananetwork/queue": "workspace:*",
     "drizzle-orm": "^0.30.0",
     "hono": "^4.0.0",
     "postgres": "^3.4.0",

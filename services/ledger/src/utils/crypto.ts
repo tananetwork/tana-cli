@@ -11,7 +11,7 @@ import {
   createTransactionMessage as createTransactionMessageCore,
   type TransactionMessage,
   type SignatureVerificationResult
-} from '@tana/crypto'
+} from '@tananetwork/crypto'
 
 /**
  * Verify an Ed25519 signature

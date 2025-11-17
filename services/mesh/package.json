@@ -1,5 +1,5 @@
 {
-  "name": "@tana/mesh",
+  "name": "@tananetwork/mesh",
   "version": "0.1.0",
   "type": "module",
   "description": "Network discovery and coordination service for Tana validators",
@@ -10,7 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@tana/crypto": "file:../../../tana-crypto",
+    "@tananetwork/crypto": "file:../../../tana-crypto",
     "hono": "^4.0.0"
   },
   "devDependencies": {

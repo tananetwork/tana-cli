@@ -11,7 +11,7 @@ import {
   createAuthMessage,
   type AuthMessage,
   type SignatureVerificationResult
-} from '@tana/crypto'
+} from '@tananetwork/crypto'
 
 /**
  * Verify an Ed25519 signature
@@ -115,7 +115,7 @@ export async function verifyAuthApproval(
  */
 export function sha256(data: string): string {
   // Re-export from crypto package
-  const { sha256Hex } = require('@tana/crypto')
+  const { sha256Hex } = require('@tananetwork/crypto')
   return sha256Hex(data)
 }
 
@@ -124,7 +124,7 @@ export function sha256(data: string): string {
  */
 export function hexToBytes(hex: string): Uint8Array {
   // Re-export from crypto package
-  const { hexToBytes } = require('@tana/crypto')
+  const { hexToBytes } = require('@tananetwork/crypto')
   return hexToBytes(hex)
 }
 
@@ -133,6 +133,6 @@ export function hexToBytes(hex: string): Uint8Array {
  */
 export function bytesToHex(bytes: Uint8Array): string {
   // Re-export from crypto package
-  const { bytesToHex } = require('@tana/crypto')
+  const { bytesToHex } = require('@tananetwork/crypto')
   return bytesToHex(bytes)
 }

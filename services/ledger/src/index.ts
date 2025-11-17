@@ -17,7 +17,7 @@ import blocksRoutes from './api/routes/blocks'
 import contractsRoutes from './api/routes/contracts'
 
 // Import Redis queue initialization
-import { initializeRedisStreams, listPendingTransactions, getStreamLength } from '@tana/queue'
+import { initializeRedisStreams, listPendingTransactions, getStreamLength } from '@tananetwork/queue'
 
 // Import heartbeat automation
 import { startHeartbeat } from './heartbeat'

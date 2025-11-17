@@ -12,7 +12,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { db, queries, isSovereign } from './db'
-import { verifySignature } from '@tana/crypto'
+import { verifySignature } from '@tananetwork/crypto'
 
 const PORT = parseInt(process.env.MESH_PORT || '8190', 10)
 const HEARTBEAT_TIMEOUT = 5 * 60 * 1000 // 5 minutes

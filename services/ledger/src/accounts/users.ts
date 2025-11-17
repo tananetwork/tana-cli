@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 import { db, users, transactions } from '../db'
 import { createHash, randomUUID } from 'crypto'
 import { verifyUserCreationSignature } from '../utils/crypto'
-import { queueTransaction } from '@tana/queue'
+import { queueTransaction } from '@tananetwork/queue'
 
 const SYSTEM_ID = '00000000-0000-0000-0000-000000000000'
 

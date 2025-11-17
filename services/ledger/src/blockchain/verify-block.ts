@@ -9,7 +9,7 @@ import { blocks } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { computeBlockHash, buildMerkleRoot, hashObject } from '../utils/merkle'
 import { computeStateRoot } from './state-tracker'
-import { verifySignature } from '@tana/crypto'
+import { verifySignature } from '@tananetwork/crypto'
 import type { BlockVerificationResult } from '../types/block'
 
 // ============================================================================
