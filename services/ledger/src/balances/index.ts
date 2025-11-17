@@ -17,8 +17,7 @@ export interface CreateCurrencyInput {
 }
 
 export interface GetBalanceInput {
-  ownerId: string
-  ownerType: 'user' | 'team'
+  userId: string
   currencyCode: string
 }
 
@@ -94,7 +93,7 @@ export async function seedCurrencies() {
 // ============================================================================
 
 /**
- * Get balance for owner and currency
+ * Get balance for user and currency
  */
 export async function getBalance(input: GetBalanceInput) {
   const [balance] = await db
@@ -102,8 +101,7 @@ export async function getBalance(input: GetBalanceInput) {
     .from(balances)
     .where(
       and(
-        eq(balances.ownerId, input.ownerId),
-        eq(balances.ownerType, input.ownerType),
+        eq(balances.userId, input.userId),
         eq(balances.currencyCode, input.currencyCode.toUpperCase())
       )
     )
@@ -113,13 +111,13 @@ export async function getBalance(input: GetBalanceInput) {
 }
 
 /**
- * Get all balances for an owner
+ * Get all balances for a user
  */
-export async function getBalances(ownerId: string, ownerType: 'user' | 'team') {
+export async function getBalances(userId: string) {
   return await db
     .select()
     .from(balances)
-    .where(and(eq(balances.ownerId, ownerId), eq(balances.ownerType, ownerType)))
+    .where(eq(balances.userId, userId))
 }
 
 /**
@@ -159,8 +157,7 @@ export async function setBalance(input: UpdateBalanceInput) {
     const [created] = await db
       .insert(balances)
       .values({
-        ownerId: input.ownerId,
-        ownerType: input.ownerType,
+        userId: input.userId,
         currencyCode: input.currencyCode.toUpperCase(),
         amount: input.amount,
       })
@@ -199,26 +196,24 @@ export async function subtractFromBalance(input: UpdateBalanceInput) {
 }
 
 /**
- * Transfer between accounts
+ * Transfer between user accounts
  */
 export async function transferBalance(
-  from: { ownerId: string; ownerType: 'user' | 'team' },
-  to: { ownerId: string; ownerType: 'user' | 'team' },
+  fromUserId: string,
+  toUserId: string,
   currencyCode: string,
   amount: string
 ) {
   // Subtract from sender
   await subtractFromBalance({
-    ownerId: from.ownerId,
-    ownerType: from.ownerType,
+    userId: fromUserId,
     currencyCode,
     amount,
   })
 
   // Add to receiver
   await addToBalance({
-    ownerId: to.ownerId,
-    ownerType: to.ownerType,
+    userId: toUserId,
     currencyCode,
     amount,
   })

@@ -12,8 +12,8 @@ import { verifyTransactionSignature } from '../utils/crypto'
 import crypto from 'crypto'
 
 export interface CreateTransactionInput {
-  from: string // User or Team ID
-  to: string // User or Team ID
+  from: string // User ID
+  to: string // User ID
   amount?: string
   currencyCode?: string
   type: 'transfer' | 'deposit' | 'withdraw' | 'contract_call' | 'user_creation' | 'contract_deployment'
@@ -151,10 +151,10 @@ export async function confirmTransaction(input: ConfirmTransactionInput) {
     // Execute the transfer based on type
     if (transaction.type === 'transfer') {
       await transferBalance(
-        { ownerId: transaction.from, ownerType: 'user' }, // TODO: Handle teams
-        { ownerId: transaction.to, ownerType: 'user' },
-        transaction.currencyCode,
-        transaction.amount
+        transaction.from,
+        transaction.to,
+        transaction.currencyCode!,
+        transaction.amount!
       )
     } else if (transaction.type === 'deposit') {
       // Deposit: Mint currency into the target account
@@ -165,8 +165,7 @@ export async function confirmTransaction(input: ConfirmTransactionInput) {
       }
 
       await addToBalance({
-        ownerId: transaction.to,
-        ownerType: 'user', // TODO: Handle teams
+        userId: transaction.to,
         currencyCode: transaction.currencyCode,
         amount: transaction.amount
       })
@@ -179,8 +178,7 @@ export async function confirmTransaction(input: ConfirmTransactionInput) {
       }
 
       await subtractFromBalance({
-        ownerId: transaction.from,
-        ownerType: 'user', // TODO: Handle teams
+        userId: transaction.from,
         currencyCode: transaction.currencyCode,
         amount: transaction.amount
       })

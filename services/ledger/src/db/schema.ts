@@ -13,11 +13,8 @@ import { relations } from 'drizzle-orm'
 
 export const currencyTypeEnum = pgEnum('currency_type', ['fiat', 'crypto'])
 export const userRoleEnum = pgEnum('user_role', ['sovereign', 'staff', 'user'])
-export const teamRoleEnum = pgEnum('team_role', ['owner', 'admin', 'member'])
-export const channelVisibilityEnum = pgEnum('channel_visibility', ['public', 'private', 'team'])
 export const transactionTypeEnum = pgEnum('transaction_type', ['transfer', 'deposit', 'withdraw', 'contract_call', 'user_creation', 'contract_deployment', 'role_change'])
 export const transactionStatusEnum = pgEnum('transaction_status', ['pending', 'confirmed', 'failed'])
-export const authSessionStatusEnum = pgEnum('auth_session_status', ['waiting', 'scanned', 'approved', 'rejected', 'expired'])
 
 // ============================================================================
 // USERS
@@ -36,7 +33,6 @@ export const users = pgTable('users', {
   bio: text('bio'),
   avatarData: text('avatar_data'), // Base64 small image or null
   avatarHash: varchar('avatar_hash', { length: 64 }), // Content hash if stored off-chain
-  landingPageId: uuid('landing_page_id'), // Reference to landing_pages table (future)
 
   // Security & replay protection
   nonce: bigint('nonce', { mode: 'number' }).notNull().default(0), // Transaction nonce for replay protection
@@ -47,69 +43,6 @@ export const users = pgTable('users', {
   // Timestamps
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
-
-// ============================================================================
-// TEAMS
-// ============================================================================
-
-export const teams = pgTable('teams', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 100 }).notNull(),
-  slug: varchar('slug', { length: 50 }).notNull().unique(), // @acme
-
-  // Metadata
-  description: text('description'),
-  avatarData: text('avatar_data'),
-  landingPageId: uuid('landing_page_id'),
-
-  // Timestamps
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
-
-export const teamMembers = pgTable('team_members', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  teamId: uuid('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  role: teamRoleEnum('role').notNull().default('member'),
-  joinedAt: timestamp('joined_at').notNull().defaultNow(),
-})
-
-// ============================================================================
-// CHANNELS
-// ============================================================================
-
-export const channels = pgTable('channels', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 100 }).notNull(),
-  slug: varchar('slug', { length: 50 }).notNull(), // #general
-  teamId: uuid('team_id').references(() => teams.id, { onDelete: 'cascade' }), // Optional team ownership
-  visibility: channelVisibilityEnum('visibility').notNull().default('public'),
-
-  // Metadata
-  description: text('description'),
-  landingPageId: uuid('landing_page_id'),
-
-  // Timestamps
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
-
-export const channelMembers = pgTable('channel_members', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  channelId: uuid('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  joinedAt: timestamp('joined_at').notNull().defaultNow(),
-})
-
-export const messages = pgTable('messages', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  channelId: uuid('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
-  authorId: uuid('author_id').notNull().references(() => users.id),
-  content: text('content').notNull(), // Max 10KB enforced at app level
-  signature: text('signature').notNull(), // Ed25519 signature
-  createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 
 // ============================================================================
@@ -136,9 +69,8 @@ export const currencies = pgTable('currencies', {
 export const balances = pgTable('balances', {
   id: uuid('id').primaryKey().defaultRandom(),
 
-  // Owner (user or team)
-  ownerId: uuid('owner_id').notNull(), // User or Team ID
-  ownerType: varchar('owner_type', { length: 10 }).notNull(), // 'user' or 'team'
+  // Owner (user only - teams removed)
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
 
   // Currency and amount
   currencyCode: varchar('currency_code', { length: 10 }).notNull().references(() => currencies.code),
@@ -147,8 +79,8 @@ export const balances = pgTable('balances', {
   // Timestamps
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => ({
-  // Unique constraint: one balance per owner+currency combination
-  uniqueOwnerCurrency: unique().on(table.ownerId, table.currencyCode),
+  // Unique constraint: one balance per user+currency combination
+  uniqueUserCurrency: unique().on(table.userId, table.currencyCode),
 }))
 
 // ============================================================================
@@ -202,22 +134,32 @@ export const blocks = pgTable('blocks', {
   timestamp: timestamp('timestamp').notNull(), // Block creation time
   producer: uuid('producer').notNull(), // Node/user that produced this block
 
-  // Block contents
-  txCount: decimal('tx_count', { precision: 10 }).notNull().default('0'), // Number of transactions
+  // FULL TRANSACTION DATA (self-contained)
+  transactions: jsonb('transactions').notNull(), // Array of complete transaction objects with signatures
+
+  // STATE CHANGES (before/after snapshots)
+  stateChanges: jsonb('state_changes').notNull(), // Array of state transitions for this block
+
+  // CONTENT REFERENCES (for large data > 10KB)
+  contentRefs: jsonb('content_refs'), // Array of SHA256 hashes to content-addressed storage
+
+  // Merkle commitments
+  txRoot: varchar('tx_root', { length: 64 }).notNull(), // Hash of transactions array (tamper detection)
   stateRoot: varchar('state_root', { length: 64 }).notNull(), // Merkle root of state after this block
-  txRoot: varchar('tx_root', { length: 64 }), // Merkle root of transactions (optional)
+
+  // Transaction count (derived)
+  txCount: bigint('tx_count', { mode: 'number' }).notNull().default(0),
 
   // Execution
   gasUsed: bigint('gas_used', { mode: 'number' }).notNull().default(0), // Total gas consumed in block
   gasLimit: bigint('gas_limit', { mode: 'number' }).notNull(), // Maximum gas allowed
 
-  // Additional data
-  metadata: jsonb('metadata'), // Extra data (contracts executed, etc.)
-  signature: text('signature').notNull(), // Producer's signature
+  // Producer signature
+  signature: text('signature').notNull(), // Ed25519 signature of block hash
 
   // Timestamps
   createdAt: timestamp('created_at').notNull().defaultNow(),
-  finalizedAt: timestamp('finalized_at'), // When block became final
+  finalizedAt: timestamp('finalized_at'), // When block became final (after consensus)
 })
 
 // ============================================================================
@@ -295,88 +237,10 @@ export const contractStorage = pgTable('contract_storage', {
   uniqueContractKey: unique().on(table.contractName, table.key),
 }))
 
-// ============================================================================
-// LANDING PAGES (Future - placeholder)
-// ============================================================================
-
-export const landingPages = pgTable('landing_pages', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  ownerId: uuid('owner_id').notNull(), // User/Team/Channel ID
-  version: decimal('version', { precision: 10 }).notNull().default('1'),
-
-  // Source code (stored on-chain)
-  sourceHTML: text('source_html').notNull(),
-  sourceCSS: text('source_css'),
-  sourceTypeScript: text('source_typescript'),
-  compiledJS: text('compiled_js'),
-
-  // Islands (dynamic components)
-  islands: jsonb('islands'), // Array of island definitions
-
-  // Metadata
-  title: varchar('title', { length: 200 }),
-  description: text('description'),
-  customDomain: varchar('custom_domain', { length: 100 }),
-  buildHash: varchar('build_hash', { length: 64 }).notNull(),
-
-  // Deployed by
-  deployedBy: uuid('deployed_by').notNull().references(() => users.id),
-  deployedAt: timestamp('deployed_at').notNull().defaultNow(),
-})
-
-// ============================================================================
-// AUTH SESSIONS (Mobile QR code authentication)
-// ============================================================================
-
-export const authSessions = pgTable('auth_sessions', {
-  id: text('id').primaryKey(), // sess_abc123
-  challenge: text('challenge').notNull().unique(), // Random challenge to be signed
-  status: authSessionStatusEnum('status').notNull().default('waiting'),
-
-  // User info (set after approval)
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
-  username: text('username'),
-  publicKey: text('public_key'),
-
-  // Session token (generated after approval)
-  sessionToken: text('session_token').unique(),
-
-  // App info
-  returnUrl: text('return_url').notNull(),
-  appName: text('app_name'),
-  appIcon: text('app_icon'),
-
-  // Timestamps
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  expiresAt: timestamp('expires_at').notNull(),
-  approvedAt: timestamp('approved_at'),
-  scannedAt: timestamp('scanned_at'),
-})
 
 // ============================================================================
 // RELATIONS (for Drizzle ORM queries)
 // ============================================================================
-
-export const usersRelations = relations(users, ({ many }) => ({
-  teamMemberships: many(teamMembers),
-  channelMemberships: many(channelMembers),
-  messages: many(messages),
-  deployedPages: many(landingPages),
-}))
-
-export const teamsRelations = relations(teams, ({ many }) => ({
-  members: many(teamMembers),
-  channels: many(channels),
-}))
-
-export const channelsRelations = relations(channels, ({ many, one }) => ({
-  team: one(teams, {
-    fields: [channels.teamId],
-    references: [teams.id],
-  }),
-  members: many(channelMembers),
-  messages: many(messages),
-}))
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
   currency: one(currencies, {
