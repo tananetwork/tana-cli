@@ -1,0 +1,19 @@
+{
+  "name": "@tana/service-auth",
+  "version": "0.1.0",
+  "description": "Service authentication tokens for inter-service communication",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "hono": "^4.0.0"
+  }
+}
