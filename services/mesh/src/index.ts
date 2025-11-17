@@ -259,9 +259,17 @@ app.post('/deny/:nodeId', async (c) => {
 // HEARTBEAT & HEALTH MONITORING
 // ============================================================================
 
+interface ServiceHealth {
+  type: string
+  healthy: boolean
+  lastCheck: number
+}
+
 interface HeartbeatRequest {
   nodeId: string
+  timestamp: number
   tailscaleIP?: string
+  services?: ServiceHealth[]
   signature: string
 }
 
@@ -280,17 +288,31 @@ app.post('/heartbeat', async (c) => {
       return c.json({ error: 'Node not active' }, 403)
     }
 
-    // Verify signature
-    const message = `heartbeat:${body.nodeId}:${Date.now()}`
+    // Verify timestamp is recent (within 1 minute)
+    const now = Date.now()
+    const timeDiff = Math.abs(now - body.timestamp)
+    if (timeDiff > 60000) {
+      return c.json({ error: 'Timestamp too old or invalid' }, 400)
+    }
+
+    // Verify signature using timestamp from request
+    const message = `heartbeat:${body.nodeId}:${body.timestamp}`
     const valid = await verifySignature(message, body.signature, node.public_key)
     if (!valid) {
       return c.json({ error: 'Invalid signature' }, 401)
     }
 
     // Update heartbeat
-    const now = Date.now()
     queries.updateHeartbeat.run(now, body.nodeId)
     queries.insertHeartbeat.run(body.nodeId, now, body.tailscaleIP || null)
+
+    // Log service health if provided
+    if (body.services && body.services.length > 0) {
+      const healthStatus = body.services.map(s =>
+        `${s.type}:${s.healthy ? '✓' : '✗'}`
+      ).join(' ')
+      console.log(`💓 Heartbeat from ${body.nodeId} [${healthStatus}]`)
+    }
 
     return c.json({ success: true, timestamp: now })
 

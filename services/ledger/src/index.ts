@@ -19,6 +19,9 @@ import contractsRoutes from './api/routes/contracts'
 // Import Redis queue initialization
 import { initializeRedisStreams, listPendingTransactions, getStreamLength } from '@tana/queue'
 
+// Import heartbeat automation
+import { startHeartbeat } from './heartbeat'
+
 const app = new Hono()
 
 // ============================================================================
@@ -122,6 +125,16 @@ initializeRedisStreams()
   .catch((err) => {
     console.error('Failed to initialize Redis streams:', err)
     console.error('Transactions will not be queued. Please check Redis connection.')
+  })
+
+// Start heartbeat automation for mesh network coordination
+startHeartbeat()
+  .then(() => {
+    console.log(`✓ Heartbeat automation ready`)
+  })
+  .catch((err) => {
+    console.error('Failed to start heartbeat:', err)
+    console.error('Mesh network coordination disabled.')
   })
 
 export default {
