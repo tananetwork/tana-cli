@@ -22,6 +22,9 @@ import { initializeRedisStreams, listPendingTransactions, getStreamLength } from
 // Import heartbeat automation
 import { startHeartbeat } from './heartbeat'
 
+// Import database migrations
+import { runMigrations } from './db'
+
 const app = new Hono()
 
 // ============================================================================
@@ -124,6 +127,15 @@ async function checkDependencies() {
   // Check database connection
   if (!process.env.DATABASE_URL) {
     errors.push('DATABASE_URL environment variable not set')
+  }
+
+  // Run database migrations first
+  if (process.env.DATABASE_URL) {
+    try {
+      await runMigrations()
+    } catch (err: any) {
+      errors.push(`Database migration failed: ${err.message}`)
+    }
   }
 
   // Check Redis connection by attempting to initialize streams

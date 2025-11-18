@@ -7,7 +7,7 @@
 
 import { createSpinner } from 'nanospinner'
 import chalk from 'chalk'
-import * as ed from '@noble/ed25519'
+import { generateKeypair } from '@tananetwork/crypto'
 import {
   writeUserConfig,
   readUserConfig,
@@ -146,24 +146,4 @@ export async function newUser(username: string, options: NewUserOptions) {
 
   console.log(chalk.yellow('⚠️  Keep your private key safe!'))
   console.log(chalk.gray(`   Stored at: ~/.config/tana/users/${username}.json\n`))
-}
-
-/**
- * Generate Ed25519 keypair using @noble/ed25519
- */
-async function generateKeypair(): Promise<{ publicKey: string; privateKey: string }> {
-  // Generate a random 32-byte private key
-  const privateKeyBytes = ed.utils.randomPrivateKey()
-
-  // Derive the public key from the private key
-  const publicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes)
-
-  // Convert to hex strings
-  const privateKey = Buffer.from(privateKeyBytes).toString('hex')
-  const publicKey = Buffer.from(publicKeyBytes).toString('hex')
-
-  return {
-    publicKey: `ed25519_${publicKey}`,
-    privateKey: `ed25519_${privateKey}`
-  }
 }
