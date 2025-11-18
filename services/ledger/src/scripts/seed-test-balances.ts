@@ -46,7 +46,7 @@ async function seedTestBalances() {
       .select()
       .from(balances)
       .where(
-        eq(balances.ownerId, user.id)
+        eq(balances.userId, user.id)
       )
       .limit(1)
 
@@ -57,7 +57,6 @@ async function seedTestBalances() {
         .set({
           amount: '1000.00',
           currencyCode: 'CAD',
-          ownerType: 'user',
           updatedAt: new Date()
         })
         .where(eq(balances.id, existingBalance.id))
@@ -68,8 +67,7 @@ async function seedTestBalances() {
       await db
         .insert(balances)
         .values({
-          ownerId: user.id,
-          ownerType: 'user',
+          userId: user.id,
           currencyCode: 'CAD',
           amount: '1000.00'
         })
