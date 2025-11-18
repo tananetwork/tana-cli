@@ -309,6 +309,8 @@ jobs:
       - name: Copy binaries
         run: |
           cp binaries/tana npm/tana-linux-x64/
+          cp binaries/tana-mesh npm/tana-linux-x64/
+          cp binaries/tana-t4 npm/tana-linux-x64/
           cp binaries/tana-runtime npm/tana-linux-x64/
           cp binaries/tana-edge npm/tana-linux-x64/
           chmod +x npm/tana-linux-x64/tana*
@@ -352,6 +354,8 @@ jobs:
       - name: Copy binaries
         run: |
           cp binaries/tana.exe npm/tana-windows-x64/
+          cp binaries/tana-mesh.exe npm/tana-windows-x64/
+          cp binaries/tana-t4.exe npm/tana-windows-x64/
           cp binaries/tana-runtime.exe npm/tana-windows-x64/
           cp binaries/tana-edge.exe npm/tana-windows-x64/
 
@@ -394,6 +398,8 @@ jobs:
       - name: Copy binaries
         run: |
           cp binaries/tana npm/tana-darwin-x64/
+          cp binaries/tana-mesh npm/tana-darwin-x64/
+          cp binaries/tana-t4 npm/tana-darwin-x64/
           cp binaries/tana-runtime npm/tana-darwin-x64/
           cp binaries/tana-edge npm/tana-darwin-x64/
           chmod +x npm/tana-darwin-x64/tana*
@@ -437,6 +443,8 @@ jobs:
       - name: Copy binaries
         run: |
           cp binaries/tana npm/tana-darwin-arm64/
+          cp binaries/tana-mesh npm/tana-darwin-arm64/
+          cp binaries/tana-t4 npm/tana-darwin-arm64/
           cp binaries/tana-runtime npm/tana-darwin-arm64/
           cp binaries/tana-edge npm/tana-darwin-arm64/
           chmod +x npm/tana-darwin-arm64/tana*
