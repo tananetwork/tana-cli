@@ -38,12 +38,19 @@ function is_global() {
 // Resolve binary path
 let binaryPath
 const binaryName = platform === 'win32' ? 'tana.exe' : 'tana'
+const fs = require('fs')
 
 try {
   if (is_global()) {
-    // Global installation
-    const globalModules = path.resolve(__dirname, '..', '..', platformPackage)
-    binaryPath = path.join(globalModules, binaryName)
+    // Try nested installation first (npm's actual behavior with optionalDependencies)
+    const nestedPath = path.join(__dirname, 'node_modules', platformPackage, binaryName)
+    if (fs.existsSync(nestedPath)) {
+      binaryPath = nestedPath
+    } else {
+      // Fall back to sibling installation (intended behavior)
+      const globalModules = path.resolve(__dirname, '..', '..', platformPackage)
+      binaryPath = path.join(globalModules, binaryName)
+    }
   } else {
     // Local installation - use require.resolve to find the platform package
     const packagePath = require.resolve(`${platformPackage}/package.json`)
