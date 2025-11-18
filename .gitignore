@@ -65,4 +65,4 @@ npm/*/package.json.tmp
 dist/
 
 # Development databases
-services/mesh/mesh.db
+services/mesh/mesh.db*.db

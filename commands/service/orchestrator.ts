@@ -165,6 +165,29 @@ async function startServiceInProcess(serviceName: string, port: number, env?: Re
 }
 
 /**
+ * Get path to standalone binary for a service (if it exists)
+ */
+function getStandaloneBinaryPath(serviceName: string): string | null {
+  // Check for standalone binaries in the dist directory
+  const binaryName = `tana-${serviceName}`
+
+  // Try relative to actual executable (for compiled binary)
+  // Use process.execPath instead of Bun.main to get real filesystem path
+  const relativeToExec = path.join(path.dirname(process.execPath), binaryName)
+  if (existsSync(relativeToExec)) {
+    return relativeToExec
+  }
+
+  // Try in dist directory (for development)
+  const inDist = new URL(`../../dist/${binaryName}`, import.meta.url).pathname
+  if (existsSync(inDist)) {
+    return inDist
+  }
+
+  return null
+}
+
+/**
  * Start a service in a subprocess
  */
 async function startServiceProcess(config: ServiceConfig): Promise<Subprocess> {
@@ -174,17 +197,29 @@ async function startServiceProcess(config: ServiceConfig): Promise<Subprocess> {
     ...config.env
   }
 
-  // Use 'bun' directly and let PATH resolve it
-  // This prevents issues with compiled binaries embedding stale paths
-  const proc = spawn({
-    cmd: ['bun', 'run', 'start'],
-    cwd: config.cwd,
-    env,
-    stdout: 'pipe',
-    stderr: 'pipe'
-  })
+  // Check if standalone binary exists
+  const binaryPath = getStandaloneBinaryPath(config.name)
 
-  return proc
+  if (binaryPath) {
+    // Spawn standalone binary
+    const proc = spawn({
+      cmd: [binaryPath],
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    })
+    return proc
+  } else {
+    // Fall back to bun run start (development mode)
+    const proc = spawn({
+      cmd: ['bun', 'run', 'start'],
+      cwd: config.cwd,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    })
+    return proc
+  }
 }
 
 /**
@@ -218,10 +253,26 @@ export class ServiceOrchestrator {
     console.log()
 
     // Define services in startup order (dependencies first)
-    // For now, only bundle ledger, identity, notifications (mesh and t4 will remain as subprocesses)
+    // mesh and t4 run as standalone binaries
+    // ledger, identity, notifications run in-process (bundled)
     const serviceConfigs: ServiceConfig[] = [
-      // Mesh and t4 will be extracted as separate binaries later (Phase 2 & 3)
-      // For MVP, skip these services - they'll be added back as Rust/standalone binaries
+      {
+        name: 'mesh',
+        port: 8190,
+        cwd: new URL('../../services/mesh', import.meta.url).pathname,
+        required: true,
+        healthCheck: 'http://localhost:8190/health'
+      },
+      {
+        name: 't4',
+        port: 8180,
+        cwd: new URL('../../services/t4', import.meta.url).pathname,
+        required: true,
+        healthCheck: 'http://localhost:8180/health',
+        env: {
+          CONTENT_DIR: process.env.CONTENT_DIR || path.join(homedir(), '.tana', 'content')
+        }
+      },
       {
         name: 'ledger',
         port: 8080,
@@ -280,15 +331,19 @@ export class ServiceOrchestrator {
   private async startService(config: ServiceConfig): Promise<void> {
     console.log(chalk.bold(`Starting ${chalk.cyan(config.name)}...`))
 
+    // Determine if this service should run in-process
+    const bundledServices = ['ledger', 'identity', 'notifications']
+    const shouldRunInProcess = this.useInProcess && bundledServices.includes(config.name)
+
     const service: RunningService = {
       name: config.name,
       port: config.port,
       healthy: false,
-      inProcess: this.useInProcess
+      inProcess: shouldRunInProcess
     }
 
     try {
-      if (this.useInProcess) {
+      if (shouldRunInProcess) {
         // Start service in-process (bundled)
         const server = await startServiceInProcess(config.name, config.port, config.env)
         if (!server) {
@@ -296,7 +351,7 @@ export class ServiceOrchestrator {
         }
         service.server = server
       } else {
-        // Start service as subprocess (development)
+        // Start service as subprocess (standalone binary or development)
         const proc = await startServiceProcess(config)
         service.process = proc
       }
@@ -314,7 +369,7 @@ export class ServiceOrchestrator {
 
       this.services.push(service)
 
-      const mode = this.useInProcess ? 'in-process' : 'subprocess'
+      const mode = shouldRunInProcess ? 'in-process' : 'standalone binary'
       console.log(chalk.green(`✓ ${config.name} started on port ${config.port} (${mode})`))
       console.log()
 

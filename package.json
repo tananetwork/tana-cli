@@ -1,6 +1,6 @@
 {
   "name": "tana-cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "module": "main.ts",
   "type": "module",
   "workspaces": [
@@ -13,7 +13,10 @@
   ],
   "scripts": {
     "dev": "bun run ./main.ts",
-    "make": "bun build ./main.ts --compile --outfile dist/tana",
+    "make": "bun build ./main.ts --compile --outfile dist/tana && cd services/mesh && bun run build && cd ../t4 && bun run build && cd ../..",
+    "make:cli": "bun build ./main.ts --compile --outfile dist/tana",
+    "make:mesh": "cd services/mesh && bun run build",
+    "make:t4": "cd services/t4 && bun run build",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down",
     "db:restart": "docker-compose restart",
