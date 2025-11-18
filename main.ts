@@ -2,12 +2,13 @@
 import { Command } from 'commander'
 import * as commands from './commands/index'
 import { meshCommand } from './commands/mesh'
+import packageJson from './package.json'
 
 const program = new Command()
 
 program
   .name('tana')
-  .version('0.1.0')
+  .version(packageJson.version)
   .description('Tana blockchain CLI - https://tana.network')
 
 // ============================================================================

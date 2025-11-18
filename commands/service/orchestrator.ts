@@ -2,14 +2,45 @@
  * Service Orchestrator
  *
  * Manages startup, shutdown, and health checking of all Tana services
+ *
+ * Supports two modes:
+ * - In-process: Services bundled into binary (production)
+ * - Subprocess: Services run via bun (development)
  */
 
-import { serve } from 'bun'
+import { serve, type Server } from 'bun'
 import chalk from 'chalk'
 import { spawn, type Subprocess, which } from 'bun'
 import { homedir } from 'os'
 import { existsSync, realpathSync } from 'fs'
 import path from 'path'
+
+// Conditional imports for bundled services (only available when bundled)
+let ledgerService: any
+let identityService: any
+let notificationsService: any
+
+/**
+ * Detect if running from compiled binary
+ */
+function isCompiledBinary(): boolean {
+  // Bun sets this to true when running from compiled binary
+  return Bun.main.endsWith('.exe') || !Bun.main.includes('node_modules')
+}
+
+/**
+ * Load bundled services (only works when services are bundled into binary)
+ */
+async function loadBundledServices() {
+  try {
+    ledgerService = await import('../../services/ledger/src/index')
+    identityService = await import('../../services/identity/src/index')
+    notificationsService = await import('../../services/notifications/src/index')
+    return true
+  } catch (error) {
+    return false
+  }
+}
 
 /**
  * Find the bun executable
@@ -53,8 +84,9 @@ interface RunningService {
   name: string
   port: number
   process?: Subprocess
-  server?: any
+  server?: Server
   healthy: boolean
+  inProcess: boolean  // True if running as in-process server, false if subprocess
 }
 
 const HEALTH_CHECK_TIMEOUT = 5000 // 5 seconds
@@ -92,6 +124,47 @@ async function waitForHealth(url: string, serviceName: string): Promise<boolean>
 }
 
 /**
+ * Start a service in-process (bundled into binary)
+ */
+async function startServiceInProcess(serviceName: string, port: number, env?: Record<string, string>): Promise<Server | null> {
+  // Set environment variables
+  if (env) {
+    for (const [key, value] of Object.entries(env)) {
+      process.env[key] = value
+    }
+  }
+  process.env.PORT = String(port)
+
+  // Get the service module
+  let serviceModule: any
+  switch (serviceName) {
+    case 'ledger':
+      serviceModule = ledgerService?.default
+      break
+    case 'identity':
+      serviceModule = identityService?.default
+      break
+    case 'notifications':
+      serviceModule = notificationsService?.default
+      break
+    default:
+      throw new Error(`Unknown service: ${serviceName}`)
+  }
+
+  if (!serviceModule) {
+    throw new Error(`Service ${serviceName} not bundled`)
+  }
+
+  // Start the server
+  const server = serve({
+    port: serviceModule.port || port,
+    fetch: serviceModule.fetch
+  })
+
+  return server
+}
+
+/**
  * Start a service in a subprocess
  */
 async function startServiceProcess(config: ServiceConfig): Promise<Subprocess> {
@@ -120,6 +193,7 @@ async function startServiceProcess(config: ServiceConfig): Promise<Subprocess> {
 export class ServiceOrchestrator {
   private services: RunningService[] = []
   private shuttingDown = false
+  private useInProcess = false
 
   /**
    * Start all services in dependency order
@@ -132,25 +206,22 @@ export class ServiceOrchestrator {
     // Load env file if exists
     await this.loadEnvironment()
 
+    // Detect mode and load services if bundled
+    const bundledAvailable = await loadBundledServices()
+    this.useInProcess = bundledAvailable && !options.dev
+
+    if (this.useInProcess) {
+      console.log(chalk.gray('✓ Running services in-process (bundled mode)'))
+    } else {
+      console.log(chalk.gray('✓ Running services as subprocesses (development mode)'))
+    }
+    console.log()
+
     // Define services in startup order (dependencies first)
+    // For now, only bundle ledger, identity, notifications (mesh and t4 will remain as subprocesses)
     const serviceConfigs: ServiceConfig[] = [
-      {
-        name: 'mesh',
-        port: 8190,
-        cwd: new URL('../../services/mesh', import.meta.url).pathname,
-        required: true,
-        healthCheck: 'http://localhost:8190/health'
-      },
-      {
-        name: 't4',
-        port: 8180,
-        cwd: new URL('../../services/t4', import.meta.url).pathname,
-        required: true,
-        healthCheck: 'http://localhost:8180/health',
-        env: {
-          CONTENT_DIR: process.env.CONTENT_DIR || path.join(homedir(), '.tana', 'content')
-        }
-      },
+      // Mesh and t4 will be extracted as separate binaries later (Phase 2 & 3)
+      // For MVP, skip these services - they'll be added back as Rust/standalone binaries
       {
         name: 'ledger',
         port: 8080,
@@ -161,6 +232,20 @@ export class ServiceOrchestrator {
           MESH_URL: process.env.MESH_URL || 'http://localhost:8190',
           T4_URL: process.env.T4_URL || 'http://localhost:8180'
         }
+      },
+      {
+        name: 'identity',
+        port: 8090,
+        cwd: new URL('../../services/identity', import.meta.url).pathname,
+        required: false,
+        healthCheck: 'http://localhost:8090/health'
+      },
+      {
+        name: 'notifications',
+        port: 8091,
+        cwd: new URL('../../services/notifications', import.meta.url).pathname,
+        required: false,
+        healthCheck: 'http://localhost:8091/health'
       }
     ]
 
@@ -198,13 +283,23 @@ export class ServiceOrchestrator {
     const service: RunningService = {
       name: config.name,
       port: config.port,
-      healthy: false
+      healthy: false,
+      inProcess: this.useInProcess
     }
 
     try {
-      // Start the service process
-      const proc = await startServiceProcess(config)
-      service.process = proc
+      if (this.useInProcess) {
+        // Start service in-process (bundled)
+        const server = await startServiceInProcess(config.name, config.port, config.env)
+        if (!server) {
+          throw new Error(`Failed to start ${config.name} in-process`)
+        }
+        service.server = server
+      } else {
+        // Start service as subprocess (development)
+        const proc = await startServiceProcess(config)
+        service.process = proc
+      }
 
       // Wait for health check if configured
       if (config.healthCheck) {
@@ -219,13 +314,17 @@ export class ServiceOrchestrator {
 
       this.services.push(service)
 
-      console.log(chalk.green(`✓ ${config.name} started on port ${config.port}`))
+      const mode = this.useInProcess ? 'in-process' : 'subprocess'
+      console.log(chalk.green(`✓ ${config.name} started on port ${config.port} (${mode})`))
       console.log()
 
     } catch (error: any) {
-      // Kill process if it was started
+      // Kill process/server if it was started
       if (service.process) {
         service.process.kill()
+      }
+      if (service.server) {
+        service.server.stop()
       }
 
       throw new Error(error.message || 'Failed to start service')
@@ -246,11 +345,14 @@ export class ServiceOrchestrator {
       console.log(chalk.gray(`  Stopping ${service.name}...`))
 
       try {
+        if (service.server) {
+          service.server.stop()
+        }
         if (service.process) {
           service.process.kill()
-          // Wait a bit for graceful shutdown
-          await new Promise(resolve => setTimeout(resolve, 500))
         }
+        // Wait a bit for graceful shutdown
+        await new Promise(resolve => setTimeout(resolve, 500))
       } catch (error) {
         console.log(chalk.red(`  Failed to stop ${service.name}`))
       }
