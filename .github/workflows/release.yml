@@ -294,11 +294,9 @@ jobs:
           chmod +x npm/tana-linux-x64/tana*
 
       - name: Publish to NPM
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/tana-linux-x64
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm publish --access public
 
       - name: Publish to GitHub Packages
@@ -338,11 +336,9 @@ jobs:
           cp binaries/tana-edge.exe npm/tana-windows-x64/
 
       - name: Publish to NPM
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/tana-windows-x64
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm publish --access public
 
       - name: Publish to GitHub Packages
@@ -383,11 +379,9 @@ jobs:
           chmod +x npm/tana-darwin-x64/tana*
 
       - name: Publish to NPM
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/tana-darwin-x64
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm publish --access public
 
       - name: Publish to GitHub Packages
@@ -428,11 +422,9 @@ jobs:
           chmod +x npm/tana-darwin-arm64/tana*
 
       - name: Publish to NPM
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/tana-darwin-arm64
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm publish --access public
 
       - name: Publish to GitHub Packages
@@ -465,11 +457,9 @@ jobs:
           mv package.json.tmp package.json
 
       - name: Publish to NPM
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/tana
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm publish --access public
 
       - name: Publish to GitHub Packages
