@@ -7,7 +7,7 @@
  */
 
 import { db } from '../db'
-import { blocks, currencies } from '../db/schema'
+import { blocks, currencies, users, balances } from '../db/schema'
 import { sql } from 'drizzle-orm'
 import { computeBlockHash, hashObject, hashString } from '../utils/merkle'
 
@@ -125,6 +125,65 @@ async function createGenesisBlock() {
 
     console.log('✅ Base currencies initialized')
     console.log('')
+
+    // Create sovereign account if credentials are provided
+    const sovereignPublicKey = process.env.SOVEREIGN_PUBLIC_KEY
+    const sovereignUsername = process.env.SOVEREIGN_USERNAME || '@sovereign'
+    const sovereignDisplayName = process.env.SOVEREIGN_DISPLAY_NAME || 'Network Sovereign'
+
+    if (sovereignPublicKey) {
+      console.log('👑 Creating sovereign account...')
+
+      // Create sovereign user
+      const [sovereign] = await db.insert(users).values({
+        publicKey: sovereignPublicKey,
+        username: sovereignUsername,
+        displayName: sovereignDisplayName,
+        role: 'sovereign',
+        stateHash: hashString('sovereign_genesis_state'),
+        nonce: 0
+      }).returning()
+
+      console.log(`  ✅ Sovereign user created: ${sovereignUsername}`)
+      console.log(`  📋 User ID: ${sovereign.id}`)
+      console.log(`  🔑 Public Key: ${sovereignPublicKey}`)
+      console.log('')
+
+      // Create sovereign balances
+      console.log('💰 Allocating sovereign initial balances...')
+
+      const initialUSD = parseInt(process.env.SOVEREIGN_INITIAL_USD || '1000000000')
+      const initialBTC = parseInt(process.env.SOVEREIGN_INITIAL_BTC || '100000')
+      const initialETH = parseInt(process.env.SOVEREIGN_INITIAL_ETH || '1000000')
+
+      await db.insert(balances).values([
+        {
+          userId: sovereign.id,
+          currencyCode: 'USD',
+          amount: initialUSD.toString()
+        },
+        {
+          userId: sovereign.id,
+          currencyCode: 'BTC',
+          amount: initialBTC.toString()
+        },
+        {
+          userId: sovereign.id,
+          currencyCode: 'ETH',
+          amount: initialETH.toString()
+        }
+      ])
+
+      console.log(`  ✅ ${initialUSD.toLocaleString()} USD`)
+      console.log(`  ✅ ${initialBTC.toLocaleString()} BTC`)
+      console.log(`  ✅ ${initialETH.toLocaleString()} ETH`)
+      console.log('')
+    } else {
+      console.log('⚠️  No sovereign credentials provided (SOVEREIGN_PUBLIC_KEY not set)')
+      console.log('   Sovereign account not created - you can add one later')
+      console.log('')
+    }
+
     console.log('🎉 Blockchain initialized successfully!')
 
   } catch (error: any) {
