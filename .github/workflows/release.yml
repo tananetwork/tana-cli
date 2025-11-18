@@ -48,9 +48,12 @@ jobs:
         working-directory: cli
         run: npm install
 
-      - name: Build CLI binary
+      - name: Build CLI and service binaries
         working-directory: cli
-        run: bun build ./main.ts --compile --outfile dist/tana
+        run: |
+          bun run make:cli
+          bun run make:mesh
+          bun run make:t4
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -67,6 +70,8 @@ jobs:
         run: |
           mkdir -p dist
           cp cli/dist/tana dist/
+          cp cli/dist/tana-mesh dist/
+          cp cli/dist/tana-t4 dist/
           cp runtime/target/release/tana-runtime dist/
           cp edge/target/release/tana-edge dist/
 
@@ -109,9 +114,12 @@ jobs:
         working-directory: cli
         run: npm install
 
-      - name: Build CLI binary
+      - name: Build CLI and service binaries
         working-directory: cli
-        run: bun build ./main.ts --compile --outfile dist/tana.exe
+        run: |
+          bun run make:cli
+          bun run make:mesh
+          bun run make:t4
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -129,6 +137,8 @@ jobs:
         run: |
           mkdir -p dist
           cp cli/dist/tana.exe dist/
+          cp cli/dist/tana-mesh.exe dist/
+          cp cli/dist/tana-t4.exe dist/
           cp runtime/target/release/tana-runtime.exe dist/
           cp edge/target/release/tana-edge.exe dist/
 
@@ -171,9 +181,12 @@ jobs:
         working-directory: cli
         run: bun install --frozen-lockfile
 
-      - name: Build CLI binary (x64)
+      - name: Build CLI and service binaries (x64)
         working-directory: cli
-        run: bun build ./main.ts --compile --target=bun-darwin-x64 --outfile dist/tana
+        run: |
+          bun run make:cli
+          bun run make:mesh
+          bun run make:t4
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -190,6 +203,8 @@ jobs:
         run: |
           mkdir -p dist
           cp cli/dist/tana dist/
+          cp cli/dist/tana-mesh dist/
+          cp cli/dist/tana-t4 dist/
           cp runtime/target/release/tana-runtime dist/
           cp edge/target/release/tana-edge dist/
 
@@ -232,9 +247,12 @@ jobs:
         working-directory: cli
         run: bun install --frozen-lockfile
 
-      - name: Build CLI binary (ARM64)
+      - name: Build CLI and service binaries (ARM64)
         working-directory: cli
-        run: bun build ./main.ts --compile --target=bun-darwin-arm64 --outfile dist/tana
+        run: |
+          bun run make:cli
+          bun run make:mesh
+          bun run make:t4
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -251,6 +269,8 @@ jobs:
         run: |
           mkdir -p dist
           cp cli/dist/tana dist/
+          cp cli/dist/tana-mesh dist/
+          cp cli/dist/tana-t4 dist/
           cp runtime/target/release/tana-runtime dist/
           cp edge/target/release/tana-edge dist/
 

@@ -1,6 +1,6 @@
 {
   "name": "@tananetwork/t4",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "Content-addressable storage server for Tana blockchain",
   "main": "src/index.ts",

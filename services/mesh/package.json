@@ -1,6 +1,6 @@
 {
   "name": "@tananetwork/mesh",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "Network discovery and coordination service for Tana validators",
   "main": "src/index.ts",
