@@ -9,7 +9,7 @@ import * as schema from './schema'
 // Database connection string
 const connectionString = process.env.IDENTITY_DB_URL ||
   process.env.DATABASE_URL ||
-  'postgres://tana:tana_dev_password@localhost:5432/tana'
+  'postgres://tana_identity_user:identity_dev_password@localhost:5432/tana_identity'
 
 // Create postgres client
 export const client = postgres(connectionString)

@@ -10,7 +10,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 // Database connection string
-const connectionString = process.env.DATABASE_URL || 'postgres://tana:tana_dev_password@localhost:5432/tana'
+const connectionString = process.env.DATABASE_URL || 'postgres://tana_ledger_user:ledger_dev_password@localhost:5432/tana_ledger'
 
 // Create postgres client
 export const client = postgres(connectionString)

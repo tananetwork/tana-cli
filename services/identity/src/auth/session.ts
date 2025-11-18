@@ -200,7 +200,7 @@ export async function expireSession(sessionId: string) {
  * Should be run periodically (e.g., every minute)
  */
 export async function cleanupExpiredSessions() {
-  const now = new Date().toISOString()
+  const now = new Date() // Pass Date object, not string
 
   const expired = await db
     .update(authSessions)
