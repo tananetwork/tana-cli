@@ -66,3 +66,4 @@ dist/
 
 # Development databases
 services/mesh/mesh.db*.db
+*.db
