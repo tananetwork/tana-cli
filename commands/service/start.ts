@@ -1,56 +1,20 @@
 /**
- * tana start
+ * tana start [mode]
  *
- * Starts all Tana services (mesh, t4, ledger) in the correct order.
- * Runs in foreground with health checks and graceful shutdown.
+ * Starts all Tana services using shared startup manager.
+ * Three interfaces:
+ * - tana start: CLI mode (spinners, logs)
+ * - tana start tui: TUI mode (terminal dashboard)
+ * - tana start webui: WebUI mode (browser dashboard)
  */
 
 import chalk from 'chalk'
-import {
-  readGlobalConfig,
-  isLedgerReachable,
-  getLedgerUrl
-} from '../../utils/config'
-import { ServiceOrchestrator } from './orchestrator'
-import Redis from 'ioredis'
-import { Client } from 'pg'
+import { isLedgerReachable, getLedgerUrl } from '../../utils/config'
+import { startCLI } from './start-cli'
+import { startTUI } from './start-tui'
+import { startWeb } from './start-web'
 
-/**
- * Check if required infrastructure services are running
- */
-async function checkInfrastructure(): Promise<{ ok: boolean; errors: string[] }> {
-  const errors: string[] = []
-
-  // Check PostgreSQL
-  const databaseUrl = process.env.DATABASE_URL || 'postgres://tana:tana_dev_password@localhost:5432/tana'
-  try {
-    const client = new Client({ connectionString: databaseUrl })
-    await client.connect()
-    await client.end()
-  } catch (err: any) {
-    errors.push(`PostgreSQL not reachable: ${err.message}`)
-  }
-
-  // Check Redis
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
-  const redis = new Redis(redisUrl, {
-    maxRetriesPerRequest: 1,
-    retryStrategy: () => null,
-  })
-
-  try {
-    await redis.ping()
-    redis.disconnect()
-  } catch (err: any) {
-    errors.push(`Redis not reachable: ${err.message}`)
-  }
-
-  return { ok: errors.length === 0, errors }
-}
-
-export async function start(chainName?: string) {
-  console.log(chalk.bold('\n🚀 Starting Tana...\n'))
-
+export async function start(options: { mode?: string; chain?: string } = {}) {
   // Check if already running
   const ledgerUrl = getLedgerUrl()
   if (await isLedgerReachable()) {
@@ -59,29 +23,20 @@ export async function start(chainName?: string) {
     process.exit(1)
   }
 
-  // Check infrastructure dependencies
-  const { ok, errors } = await checkInfrastructure()
-  if (!ok) {
-    console.log(chalk.red('✗ Infrastructure services not ready:\n'))
-    errors.forEach(error => console.log(chalk.gray(`   • ${error}`)))
-    console.log(chalk.cyan('\n💡 Start infrastructure services:'))
-    console.log(chalk.gray('   docker-compose up -d postgres redis'))
-    console.log(chalk.gray('   OR'))
-    console.log(chalk.gray('   npm run db:up\n'))
-    process.exit(1)
+  switch (options.mode) {
+    case 'tui':
+      // Launch TUI mode (terminal dashboard)
+      await startTUI(options.chain)
+      break
+
+    case 'webui':
+      // Launch WebUI mode (browser dashboard)
+      await startWeb(options.chain)
+      break
+
+    default:
+      // Launch CLI mode (spinners, logs)
+      await startCLI(options.chain)
+      break
   }
-
-  // Determine which chain to start
-  let targetChain = chainName
-  if (!targetChain) {
-    const config = readGlobalConfig()
-    targetChain = config?.defaultChain || 'local'
-  }
-
-  console.log(chalk.gray(`Chain: ${chalk.cyan(targetChain)}`))
-  console.log()
-
-  // Start all services using orchestrator
-  const orchestrator = new ServiceOrchestrator()
-  await orchestrator.startAll()
 }

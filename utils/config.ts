@@ -238,14 +238,37 @@ export interface GlobalConfig {
   defaultUser?: string
 }
 
+export interface ServiceConfig {
+  url: string
+  // Future: timeout?: number, retries?: number, etc.
+}
+
 export interface ChainConfig {
   name: string
   type: 'local' | 'remote'
-  url: string
-  port?: number
+  url: string // Deprecated: use ledger.url instead
+  port?: number // Deprecated: use ledger.url port
   isGenesis: boolean
   createdAt: string
   genesisBlock?: string
+
+  // Genesis configuration
+  coreContracts?: {
+    dir: string // Directory containing core contracts (default: "./contracts")
+  }
+
+  // Service configurations (top-level for extensibility)
+  // Infrastructure
+  postgres?: ServiceConfig
+  redis?: ServiceConfig
+
+  // Tana services
+  mesh?: ServiceConfig
+  t4?: ServiceConfig
+  ledger?: ServiceConfig
+  identity?: ServiceConfig
+  notifications?: ServiceConfig
+  topology?: ServiceConfig
 }
 
 export interface NodeConfig {
@@ -303,4 +326,130 @@ export function saveValidatorConfig(config: ValidatorConfig): void {
   ensureConfigDirs()
   const configPath = join(CONFIG_DIR, 'validator.json')
   writeFileSync(configPath, JSON.stringify(config, null, 2))
+}
+
+/**
+ * Service names for type-safe access
+ */
+export type ServiceName = 'postgres' | 'redis' | 'mesh' | 't4' | 'ledger' | 'identity' | 'notifications' | 'topology'
+
+/**
+ * Required services (hardcoded - these MUST have URLs defined)
+ */
+export const REQUIRED_SERVICES: ServiceName[] = ['postgres', 'redis', 'mesh', 't4', 'ledger']
+
+/**
+ * Optional services (will be skipped if no URL defined)
+ */
+export const OPTIONAL_SERVICES: ServiceName[] = ['identity', 'notifications', 'topology']
+
+/**
+ * Get default service configurations for local development
+ * Returns partial ChainConfig with only service fields
+ */
+export function getDefaultServiceConfigs(): Pick<ChainConfig, ServiceName> {
+  return {
+    postgres: {
+      url: 'postgres://postgres:tana_dev_password@localhost:5432'
+    },
+    redis: {
+      url: 'redis://localhost:6379'
+    },
+    mesh: {
+      url: 'http://localhost:8190'
+    },
+    t4: {
+      url: 'http://localhost:8180'
+    },
+    ledger: {
+      url: 'http://localhost:8080'
+    },
+    identity: {
+      url: 'http://localhost:8090'
+    },
+    notifications: {
+      url: 'http://localhost:8091'
+    },
+    topology: {
+      url: 'http://localhost:3001'
+    }
+  }
+}
+
+/**
+ * Get service URL from chain config with fallback to defaults
+ * Returns empty string if not found (caller should check)
+ */
+export function getServiceUrl(
+  chainConfig: ChainConfig | null,
+  serviceName: ServiceName
+): string | undefined {
+  // Try to get from chain config (top-level field)
+  const serviceConfig = chainConfig?.[serviceName]
+  if (serviceConfig?.url) {
+    return serviceConfig.url
+  }
+
+  // Fallback to defaults
+  const defaults = getDefaultServiceConfigs()
+  return defaults[serviceName]?.url
+}
+
+/**
+ * Validate that all required services have URLs defined in config
+ * Returns array of missing required services
+ * NOTE: Does NOT use fallback defaults - config must explicitly define required services
+ */
+export function validateRequiredServices(chainConfig: ChainConfig | null): ServiceName[] {
+  if (!chainConfig) {
+    return [...REQUIRED_SERVICES] // All required services missing
+  }
+
+  const missing: ServiceName[] = []
+
+  for (const serviceName of REQUIRED_SERVICES) {
+    const serviceConfig = chainConfig[serviceName]
+    if (!serviceConfig?.url) {
+      missing.push(serviceName)
+    }
+  }
+
+  return missing
+}
+
+/**
+ * Get core contracts directory
+ * Returns configured directory or default "./contracts"
+ */
+export function getCoreContractsDir(chainConfig: ChainConfig | null): string {
+  return chainConfig?.coreContracts?.dir || './contracts'
+}
+
+/**
+ * Get sovereign user (first user created)
+ * Returns the oldest user by creation date, null if no users exist
+ */
+export function getSovereignUser(): UserConfig | null {
+  const users = listUsers()
+
+  if (users.length === 0) {
+    return null
+  }
+
+  // Find user with earliest createdAt timestamp
+  let oldestUser: UserConfig | null = null
+  let oldestTimestamp: number = Date.now()
+
+  for (const username of users) {
+    const userConfig = readUserConfig(username)
+    if (!userConfig) continue
+
+    const timestamp = new Date(userConfig.createdAt).getTime()
+    if (timestamp < oldestTimestamp) {
+      oldestTimestamp = timestamp
+      oldestUser = userConfig
+    }
+  }
+
+  return oldestUser
 }

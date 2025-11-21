@@ -38,6 +38,12 @@ export async function newChain(name: string) {
 
   // Create chain configuration
   const ledgerUrl = getLedgerUrl()
+  const { getDefaultServiceConfigs, getSovereignUser } = await import('../../utils/config')
+
+  // Check if sovereign user exists (first user created)
+  const sovereignUser = getSovereignUser()
+  const sovereignUsername = sovereignUser?.username
+
   const chainConfig: ChainConfig = {
     name,
     type: 'local',
@@ -45,7 +51,15 @@ export async function newChain(name: string) {
     port: 8080,
     isGenesis: true,
     createdAt: new Date().toISOString(),
-    genesisBlock: genesisHash
+    genesisBlock: genesisHash,
+
+    // Genesis configuration
+    coreContracts: {
+      dir: './contracts' // Default: contracts in current directory
+    },
+
+    // Service configurations (top-level for extensibility)
+    ...getDefaultServiceConfigs()
   }
 
   const writeSpinner = createSpinner('Writing chain configuration...').start()
@@ -77,10 +91,23 @@ export async function newChain(name: string) {
   console.log(`  Genesis Block: ${chalk.gray(genesisHash.substring(0, 16) + '...')}`)
   console.log(chalk.gray('━'.repeat(50)))
 
+  console.log(chalk.bold('\nGenesis Configuration:'))
+  if (sovereignUsername) {
+    console.log(`  Sovereign User: ${chalk.cyan(sovereignUsername)} ${chalk.gray('(first user = sovereign)')}`)
+  } else {
+    console.log(`  Sovereign User: ${chalk.yellow('None')} ${chalk.gray('(first user will become sovereign)')}`)
+  }
+  console.log(`  Core Contracts: ${chalk.cyan('./contracts')} ${chalk.gray('(can be changed in config)')}`)
+  console.log(chalk.gray('━'.repeat(50)))
+
   console.log(chalk.bold('\nNext Steps:'))
-  console.log(`  1. Start your chain:  ${chalk.cyan(`tana start`)}`)
-  console.log(`  2. Create a user:     ${chalk.cyan(`tana new user <username>`)}`)
-  console.log(`  3. Check status:      ${chalk.cyan(`tana status`)}`)
+  if (!sovereignUsername) {
+    console.log(`  ${chalk.yellow('1.')} Create first user:  ${chalk.cyan(`tana new user <username>`)} ${chalk.gray('← becomes sovereign')}`)
+    console.log(`  2. Start your chain:  ${chalk.cyan(`tana start`)}`)
+  } else {
+    console.log(`  1. Start your chain:  ${chalk.cyan(`tana start`)}`)
+  }
+  console.log(`  ${!sovereignUsername ? '3' : '2'}. Check status:      ${chalk.cyan(`tana status`)}`)
   console.log()
 }
 

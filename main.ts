@@ -108,11 +108,14 @@ deployCommand
 // ============================================================================
 
 program
-  .command('start')
-  .description('Start local chain/node services')
+  .command('start [mode]')
+  .description('Start local chain/node services (mode: tui | webui)')
   .option('-c, --chain <name>', 'Specific chain to start')
-  .action(async (options) => {
-    await commands.start(options.chain)
+  .action(async (mode: string | undefined, options) => {
+    await commands.start({
+      mode,
+      chain: options.chain
+    })
   })
 
 program
