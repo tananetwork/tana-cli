@@ -19,8 +19,14 @@ import { StateTracker, computeStateRoot } from '../blockchain/state-tracker'
 import { computeBlockHash, hashObject } from '../utils/merkle'
 import type { BlockTransaction, StateChange, ContentReference } from '../types/block'
 import { signMessage } from '@tananetwork/crypto'
+import { hasQuorum, getActiveValidators } from '../db/queries'
 
 const SYSTEM_PRODUCER_ID = '00000000-0000-0000-0000-000000000000'
+
+// Consensus configuration (from environment)
+const CONSENSUS_ENABLED = process.env.CONSENSUS_ENABLED === 'true'
+const VALIDATOR_ID = process.env.VALIDATOR_ID || 'val_default'
+const CONSENSUS_URL = process.env.CONSENSUS_URL || 'http://localhost:9001'
 
 // KV Storage constants (Cloudflare-inspired limits)
 const MAX_KEY_LENGTH = 512                  // bytes
@@ -732,6 +738,81 @@ async function produceBlock() {
     // Sign the block (using system producer for now)
     // In production, this would use the actual validator's key
     const signature = hash // Placeholder - would be: await signMessage(hash, producerPrivateKey)
+
+    // ============================================================================
+    // CONSENSUS: Propose block and wait for quorum (if enabled)
+    // ============================================================================
+
+    if (CONSENSUS_ENABLED) {
+      console.log('')
+      console.log(`[Consensus] Proposing block ${hash.slice(0, 8)}... to network`)
+      console.log(`[Consensus] Validator: ${VALIDATOR_ID}`)
+
+      // Build block proposal
+      const blockProposal = {
+        height: newHeight,
+        hash,
+        previousHash: latestBlock.hash,
+        timestamp: timestamp.toISOString(),
+        transactions: fullTransactions,
+        proposerId: VALIDATOR_ID,
+      }
+
+      // Notify consensus service
+      try {
+        const response = await fetch(`${CONSENSUS_URL}/propose`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ block: blockProposal }),
+        })
+
+        if (!response.ok) {
+          const error = await response.text()
+          console.error('[Consensus] Failed to propose block:', error)
+          console.log('⚠️  Block not proposed - discarding')
+          return
+        }
+
+        console.log('[Consensus] Block proposed successfully')
+      } catch (err: any) {
+        console.error('[Consensus] Failed to propose block:', err.message)
+        console.log('⚠️  Cannot reach consensus service - discarding block')
+        return
+      }
+
+      // Wait for quorum (poll database)
+      const maxWaitTime = 30000  // 30 seconds
+      const startTime = Date.now()
+      let hasReachedQuorum = false
+
+      console.log('[Consensus] Waiting for quorum...')
+
+      while (Date.now() - startTime < maxWaitTime) {
+        const validators = await getActiveValidators()
+        const quorum = await hasQuorum(hash, validators.length)
+
+        if (quorum) {
+          hasReachedQuorum = true
+          break
+        }
+
+        // Wait 500ms before checking again
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+
+      if (!hasReachedQuorum) {
+        console.log(`[Consensus] Block ${hash.slice(0, 8)}... did not reach quorum - discarding`)
+        console.log('⚠️  Block discarded due to lack of consensus')
+        return
+      }
+
+      console.log(`[Consensus] ✅ Block ${hash.slice(0, 8)}... reached quorum - committing`)
+      console.log('')
+    }
+
+    // ============================================================================
+    // COMMIT BLOCK TO DATABASE
+    // ============================================================================
 
     // Insert self-contained block
     await db.insert(blocks).values({

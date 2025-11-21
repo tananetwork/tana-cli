@@ -15,6 +15,7 @@ import balancesRoutes from './api/routes/balances'
 import transactionsRoutes from './api/routes/transactions'
 import blocksRoutes from './api/routes/blocks'
 import contractsRoutes from './api/routes/contracts'
+import consensusRoutes from './api/routes/consensus'
 
 // Import Redis queue initialization
 import { initializeRedisStreams, listPendingTransactions, getStreamLength } from '@tananetwork/queue'
@@ -64,6 +65,7 @@ app.route('/balances', balancesRoutes)
 app.route('/transactions', transactionsRoutes)
 app.route('/blocks', blocksRoutes)
 app.route('/contracts', contractsRoutes)
+app.route('/consensus', consensusRoutes)
 
 // Pending transactions queue status
 app.get('/pending', async (c) => {
