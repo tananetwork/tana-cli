@@ -439,7 +439,7 @@ app.post('/validators/:id/heartbeat', async (c) => {
     return c.json({ success: true, timestamp: now, registered: !existing })
 
   } catch (err: any) {
-    console.error('Validator heartbeat error:', err)
+    console.error('[Mesh] Validator heartbeat error:', err)
     return c.json({ error: err.message }, 500)
   }
 })
