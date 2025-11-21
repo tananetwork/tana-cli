@@ -333,6 +333,118 @@ setInterval(() => {
 }, 60 * 1000) // Check every minute
 
 // ============================================================================
+// VALIDATOR REGISTRY (For Multi-Validator Consensus)
+// ============================================================================
+
+// Get all active validators (for consensus)
+app.get('/validators/active', (c) => {
+  const validators = queries.getNodesByStatus.all('active')
+
+  return c.json({
+    validators: validators.map((v: any) => ({
+      id: v.id,
+      publicKey: v.public_key,
+      wsUrl: v.tailscale_hostname, // Can be used for WebSocket connection
+      lastSeen: v.last_heartbeat
+    }))
+  })
+})
+
+// Register validator (alias for /register with validator type)
+app.post('/validators', async (c) => {
+  try {
+    const body = await c.req.json()
+
+    // Add validator service type if not present
+    if (!body.services) {
+      body.services = []
+    }
+
+    // Ensure validator has consensus service
+    const hasConsensus = body.services.some((s: any) => s.type === 'consensus')
+    if (!hasConsensus && body.wsUrl) {
+      const url = new URL(body.wsUrl)
+      body.services.push({
+        type: 'consensus',
+        port: parseInt(url.port) || 9000,
+        publicKey: body.publicKey
+      })
+    }
+
+    // Register as a node
+    const now = Date.now()
+    queries.registerNode.run(
+      body.id,
+      body.publicKey,
+      body.wsUrl,
+      null, // tailscale IP not needed for local validators
+      now,
+      body.signature || 'TODO' // TODO: Verify signature
+    )
+
+    // Register services
+    for (const service of body.services) {
+      queries.registerService.run(
+        body.id,
+        service.type,
+        service.port,
+        service.publicKey,
+        now
+      )
+    }
+
+    console.log(`🔐 Validator registered: ${body.id}`)
+
+    return c.json({
+      success: true,
+      validatorId: body.id,
+      status: 'pending',
+      message: 'Validator registered. Awaiting approval.'
+    }, 201)
+
+  } catch (err: any) {
+    console.error('Validator registration error:', err)
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// Validator heartbeat (update last seen)
+app.post('/validators/:id/heartbeat', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const now = Date.now()
+
+    queries.updateHeartbeat.run(now, id)
+    queries.insertHeartbeat.run(id, now, null)
+
+    return c.json({ success: true, timestamp: now })
+
+  } catch (err: any) {
+    console.error('Validator heartbeat error:', err)
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// Get validator by ID
+app.get('/validators/:id', (c) => {
+  const id = c.req.param('id')
+  const validator = queries.getNode.get(id)
+
+  if (!validator) {
+    return c.json({ error: 'Validator not found' }, 404)
+  }
+
+  const services = queries.getNodeServices.all(id)
+
+  return c.json({
+    validator: {
+      ...validator,
+      services
+    }
+  })
+})
+
+// ============================================================================
 // SOVEREIGN KEY MANAGEMENT
 // ============================================================================
 
@@ -368,16 +480,20 @@ console.log('  Status: Running')
 console.log('  Port:', PORT)
 console.log('')
 console.log('  Endpoints:')
-console.log('    POST   /register         - Register new node')
-console.log('    GET    /nodes            - List nodes')
-console.log('    GET    /nodes/:id        - Get node info')
-console.log('    GET    /topology         - Network topology')
-console.log('    POST   /approve/:id      - Approve node (sovereign)')
-console.log('    POST   /deny/:id         - Deny node (sovereign)')
-console.log('    POST   /heartbeat        - Node heartbeat')
-console.log('    POST   /sovereign/add    - Add sovereign key')
-console.log('    GET    /health           - Health check')
-console.log('    GET    /info             - Service info')
+console.log('    POST   /register              - Register new node')
+console.log('    GET    /nodes                 - List nodes')
+console.log('    GET    /nodes/:id             - Get node info')
+console.log('    GET    /topology              - Network topology')
+console.log('    POST   /approve/:id           - Approve node (sovereign)')
+console.log('    POST   /deny/:id              - Deny node (sovereign)')
+console.log('    POST   /heartbeat             - Node heartbeat')
+console.log('    GET    /validators/active     - List active validators')
+console.log('    POST   /validators            - Register validator')
+console.log('    POST   /validators/:id/heartbeat - Validator heartbeat')
+console.log('    GET    /validators/:id        - Get validator info')
+console.log('    POST   /sovereign/add         - Add sovereign key')
+console.log('    GET    /health                - Health check')
+console.log('    GET    /info                  - Service info')
 console.log('')
 console.log('━'.repeat(60))
 console.log('')

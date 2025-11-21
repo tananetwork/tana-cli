@@ -2,6 +2,7 @@
 import { Command } from 'commander'
 import * as commands from './commands/index'
 import { meshCommand } from './commands/mesh'
+import { initValidator } from './commands/init'
 import packageJson from './package.json'
 
 const program = new Command()
@@ -52,6 +53,27 @@ newCommand
   .description('Scaffold a new smart contract')
   .action(async (name?: string) => {
     await commands.newContract(name)
+  })
+
+// ============================================================================
+// INIT COMMANDS - Initialize validator and other components
+// ============================================================================
+
+const initCommand = program
+  .command('init')
+  .description('Initialize validator node or other components')
+  .action(() => {
+    initCommand.help()
+  })
+
+initCommand
+  .command('validator')
+  .description('Initialize a new validator node for consensus')
+  .option('-p, --port <port>', 'WebSocket port for consensus', '9000')
+  .option('--http-port <port>', 'HTTP port for consensus API', '9001')
+  .option('--peers <peers>', 'Comma-separated peer URLs (e.g., ws://val1:9000,ws://val2:9000)')
+  .action(async (options) => {
+    await initValidator(options)
   })
 
 // ============================================================================

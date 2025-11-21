@@ -1,0 +1,1 @@
+export { initValidator } from './validator'

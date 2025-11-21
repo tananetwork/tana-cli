@@ -252,9 +252,14 @@ export class ServiceOrchestrator {
     }
     console.log()
 
+    // Load validator config (if exists)
+    const { getValidatorConfig } = await import('../../utils/config')
+    const validatorConfig = getValidatorConfig()
+
     // Define services in startup order (dependencies first)
     // mesh and t4 run as standalone binaries
     // ledger, identity, notifications run in-process (bundled)
+    // consensus runs as standalone binary (if validator configured)
     const serviceConfigs: ServiceConfig[] = [
       {
         name: 'mesh',
@@ -281,7 +286,10 @@ export class ServiceOrchestrator {
         healthCheck: 'http://localhost:8080/health',
         env: {
           MESH_URL: process.env.MESH_URL || 'http://localhost:8190',
-          T4_URL: process.env.T4_URL || 'http://localhost:8180'
+          T4_URL: process.env.T4_URL || 'http://localhost:8180',
+          CONSENSUS_ENABLED: validatorConfig ? 'true' : 'false',
+          VALIDATOR_ID: validatorConfig?.validatorId || 'val_default',
+          CONSENSUS_URL: validatorConfig ? `http://localhost:${validatorConfig.httpPort}` : 'http://localhost:9001',
         }
       },
       {
@@ -299,6 +307,24 @@ export class ServiceOrchestrator {
         healthCheck: 'http://localhost:8091/health'
       }
     ]
+
+    // Add consensus service if validator is configured
+    if (validatorConfig) {
+      serviceConfigs.push({
+        name: 'consensus',
+        port: validatorConfig.wsPort,
+        cwd: new URL('../../services/consensus', import.meta.url).pathname,
+        required: false,
+        healthCheck: `http://localhost:${validatorConfig.httpPort}/health`,
+        env: {
+          VALIDATOR_ID: validatorConfig.validatorId,
+          CONSENSUS_PORT: String(validatorConfig.wsPort),
+          HTTP_PORT: String(validatorConfig.httpPort),
+          PEERS: JSON.stringify(validatorConfig.peers),
+          DATABASE_URL: process.env.DATABASE_URL || 'postgres://tana:tana_dev_password@localhost:5432/tana',
+        }
+      })
+    }
 
     // Start services sequentially
     for (const config of serviceConfigs) {

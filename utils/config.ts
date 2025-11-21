@@ -265,3 +265,42 @@ export interface UserConfig {
   createdAt: string
   chains: string[]
 }
+
+export interface ValidatorConfig {
+  validatorId: string
+  publicKey: string
+  privateKey: string
+  wsPort: number
+  httpPort: number
+  wsUrl: string
+  peers: Array<{ id: string; wsUrl: string }>
+  createdAt: string
+}
+
+/**
+ * Read validator config
+ */
+export function getValidatorConfig(): ValidatorConfig | null {
+  const configPath = join(CONFIG_DIR, 'validator.json')
+
+  if (!existsSync(configPath)) {
+    return null
+  }
+
+  try {
+    const data = readFileSync(configPath, 'utf-8')
+    return JSON.parse(data)
+  } catch (error) {
+    console.error('Error reading validator config:', error)
+    return null
+  }
+}
+
+/**
+ * Write validator config
+ */
+export function saveValidatorConfig(config: ValidatorConfig): void {
+  ensureConfigDirs()
+  const configPath = join(CONFIG_DIR, 'validator.json')
+  writeFileSync(configPath, JSON.stringify(config, null, 2))
+}
