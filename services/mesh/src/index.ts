@@ -467,6 +467,48 @@ app.get('/validators/:id', (c) => {
 // SOVEREIGN KEY MANAGEMENT
 // ============================================================================
 
+// Verify sovereign signature
+app.post('/sovereign/verify', async (c) => {
+  try {
+    const { message, signature, publicKey } = await c.req.json()
+
+    if (!message || !signature) {
+      return c.json({ error: 'Missing message or signature' }, 400)
+    }
+
+    // If publicKey provided, check if it's sovereign
+    if (publicKey) {
+      if (!isSovereign(publicKey)) {
+        return c.json({ error: 'Not a sovereign key' }, 403)
+      }
+
+      // Verify signature
+      const valid = await verifySignature(message, signature, publicKey)
+      if (!valid) {
+        return c.json({ error: 'Invalid signature' }, 401)
+      }
+
+      return c.json({ valid: true, publicKey })
+    }
+
+    // If no publicKey, try all sovereign keys (slower but works for chaos TUI)
+    const sovereignKeys = db.prepare('SELECT public_key FROM sovereign_keys').all() as Array<{ public_key: string }>
+
+    for (const key of sovereignKeys) {
+      const valid = await verifySignature(message, signature, key.public_key)
+      if (valid) {
+        return c.json({ valid: true, publicKey: key.public_key })
+      }
+    }
+
+    return c.json({ error: 'Invalid signature or unknown sovereign' }, 401)
+
+  } catch (err: any) {
+    console.error('Sovereign verify error:', err)
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 app.post('/sovereign/add', async (c) => {
   try {
     const { publicKey, description, adminSignature } = await c.req.json()
