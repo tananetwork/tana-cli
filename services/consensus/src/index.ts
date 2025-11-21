@@ -10,6 +10,13 @@ const VALIDATOR_ID = process.env.VALIDATOR_ID || 'val_default'
 const WS_PORT = parseInt(process.env.CONSENSUS_PORT || '9000')
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || '9001')
 const PEERS = JSON.parse(process.env.PEERS || '[]')
+const MESH_URL = process.env.MESH_URL || 'http://localhost:8190'
+
+console.log('[Consensus] Starting with config:')
+console.log('  VALIDATOR_ID:', VALIDATOR_ID)
+console.log('  WS_PORT:', WS_PORT)
+console.log('  HTTP_PORT:', HTTP_PORT)
+console.log('  DATABASE_URL:', process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':***@') || 'not set')
 
 class ConsensusService {
   private network: P2PNetwork
@@ -94,12 +101,20 @@ class ConsensusService {
       console.log(`[Consensus] Heartbeat from ${msg.validatorId} at height ${msg.currentHeight}`)
 
       // Update validator in database
-      await upsertValidator({
-        id: msg.validatorId,
-        publicKey: 'TODO',  // TODO: Get from handshake
-        wsUrl: 'TODO',
-        status: 'active',
-      })
+      try {
+        await upsertValidator({
+          id: msg.validatorId,
+          publicKey: 'TODO',  // TODO: Get from handshake
+          wsUrl: 'TODO',
+          status: 'active',
+        })
+        console.log(`[Consensus] Validator ${msg.validatorId} upserted successfully`)
+      } catch (error: any) {
+        console.error(`[Consensus] Failed to upsert validator ${msg.validatorId}:`)
+        console.error('  Error message:', error?.message || 'No message')
+        console.error('  Error code:', error?.code || 'No code')
+        console.error('  Error detail:', error?.detail || 'No detail')
+      }
     })
   }
 
@@ -163,15 +178,38 @@ class ConsensusService {
     }
   }
 
+  private async sendMeshHeartbeat() {
+    try {
+      const response = await fetch(`${MESH_URL}/validators/${VALIDATOR_ID}/heartbeat`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(2000)
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        if (result.registered) {
+          console.log(`[Consensus] ✅ Registered with mesh: ${VALIDATOR_ID}`)
+        }
+      }
+    } catch (error) {
+      // Mesh might be down, that's okay - we'll retry next interval
+      // Silent failure for resilience
+    }
+  }
+
   private startHeartbeat() {
     setInterval(() => {
+      // Broadcast to peers
       this.network.broadcast({
         type: 'HEARTBEAT',
         validatorId: VALIDATOR_ID,
         currentHeight: this.currentHeight,
         timestamp: Date.now(),
       })
-    }, 10000)  // Every 10 seconds
+
+      // Send heartbeat to mesh (for discovery/monitoring)
+      this.sendMeshHeartbeat()
+    }, 5000)  // Every 5 seconds
   }
 
   start() {

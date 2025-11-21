@@ -408,16 +408,35 @@ app.post('/validators', async (c) => {
   }
 })
 
-// Validator heartbeat (update last seen)
+// Validator heartbeat (update last seen, auto-create if needed)
 app.post('/validators/:id/heartbeat', async (c) => {
   try {
     const id = c.req.param('id')
     const now = Date.now()
 
-    queries.updateHeartbeat.run(now, id)
-    queries.insertHeartbeat.run(id, now, null)
+    // Check if validator exists
+    const existing = queries.getNode.get(id)
 
-    return c.json({ success: true, timestamp: now })
+    if (!existing) {
+      // Auto-create validator node (active by default for local validators)
+      console.log(`[Mesh] Auto-registering validator: ${id}`)
+      queries.registerNode.run(
+        id,
+        `auto_${id}_${Date.now()}`, // placeholder public key
+        `${id}.local`,               // placeholder hostname
+        '127.0.0.1',                 // localhost
+        now,                         // registered_at
+        `auto_signature_${id}`       // placeholder signature
+      )
+
+      // Auto-approve for local development
+      queries.approveNode.run(now, 'auto-sovereign', id)
+    }
+
+    queries.updateHeartbeat.run(now, id)
+    queries.insertHeartbeat.run(id, now, '127.0.0.1')
+
+    return c.json({ success: true, timestamp: now, registered: !existing })
 
   } catch (err: any) {
     console.error('Validator heartbeat error:', err)
