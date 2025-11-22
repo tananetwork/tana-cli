@@ -13,6 +13,7 @@ import Redis from 'ioredis'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import * as ed from '@noble/ed25519'
+import { sha512 } from '@noble/hashes/sha2'
 import {
   validateRequiredServices,
   getValidatorConfig,
@@ -24,8 +25,12 @@ import {
   REQUIRED_SERVICES
 } from '../utils/config'
 
-// Configure noble/ed25519 with SHA512
-ed.etc.sha512Sync = (...m) => createHash('sha512').update(Buffer.concat(m)).digest()
+// Configure noble/ed25519 with SHA512 (required for keypair generation)
+// Noble/ed25519 v3 requires setting ed.hashes.sha512
+// @ts-ignore
+ed.hashes.sha512 = sha512
+// @ts-ignore
+ed.hashes.sha512Async = (m: Uint8Array) => Promise.resolve(sha512(m))
 
 export type ServiceStatus = 'stopped' | 'starting' | 'running' | 'failed'
 
@@ -169,18 +174,21 @@ export class StartupManager extends EventEmitter {
         await this.startService(service)
       }
 
-      // Ensure database exists and migrations have run
+      // Ensure database exists
       await this.ensureDatabase()
-
-      // Initialize genesis after database is up (if --genesis flag)
-      if (this.genesis) {
-        await this.initializeGenesis()
-      }
 
       // Start Tana services (mesh, t4, ledger, consensus, etc.)
       const tanaServices = SERVICES.filter(s => s.type === 'tana')
       for (const service of tanaServices) {
         await this.startService(service)
+      }
+
+      // Initialize genesis after ledger is running (if --genesis flag)
+      // This ensures migrations have run and database tables exist
+      if (this.genesis) {
+        this.emit('message', 'Waiting for ledger service to complete migrations...')
+        await new Promise(resolve => setTimeout(resolve, 3000)) // Wait for migrations
+        await this.initializeGenesis()
       }
 
       this.emit('complete', { success: true })

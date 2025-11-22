@@ -8,6 +8,7 @@
         "@hono/zod-validator": "^0.2.0",
         "@ipld/dag-cbor": "^9.2.5",
         "@noble/ed25519": "^3.0.0",
+        "@noble/hashes": "^2.0.1",
         "@opentui/core": "^0.1.47",
         "@opentui/react": "^0.1.47",
         "@tananetwork/crypto": "^0.1.1",
