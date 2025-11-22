@@ -678,18 +678,20 @@ export class StartupManager extends EventEmitter {
       try {
         await client.connect()
 
+        // Check if blocks table exists AND has the transactions column (from migration 0013)
         const result = await client.query(`
           SELECT EXISTS (
-            SELECT FROM pg_tables
-            WHERE schemaname = 'public'
-            AND tablename = 'blocks'
+            SELECT FROM information_schema.columns
+            WHERE table_schema = 'public'
+            AND table_name = 'blocks'
+            AND column_name = 'transactions'
           )
         `)
 
         await client.end()
 
         if (result.rows[0].exists) {
-          this.emit('message', '✓ Migrations complete - blocks table exists')
+          this.emit('message', '✓ Migrations complete - all schema changes applied')
           return
         }
 

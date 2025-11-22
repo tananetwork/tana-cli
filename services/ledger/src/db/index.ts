@@ -27,7 +27,7 @@ export const db = drizzle(client, { schema })
 export async function runMigrations() {
   try {
     // Find migrations directory
-    const migrationsPath = path.join(import.meta.dir, '../migrations')
+    const migrationsPath = path.join(import.meta.dir, '../../migrations')
 
     // Check if migrations directory exists
     if (!fs.existsSync(migrationsPath)) {
