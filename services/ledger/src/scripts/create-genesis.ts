@@ -7,9 +7,81 @@
  */
 
 import { db } from '../db'
-import { blocks, currencies, users, balances } from '../db/schema'
+import { blocks, currencies, users, balances, contracts } from '../db/schema'
 import { sql } from 'drizzle-orm'
 import { computeBlockHash, hashObject, hashString } from '../utils/merkle'
+import { existsSync, readdirSync, readFileSync } from 'fs'
+import { extractContractFunctions } from '../../../../utils/contract-extractor'
+
+/**
+ * Deploy core contracts from ./contracts/core/ directory
+ */
+async function deployCoreContracts(sovereignUserId: string): Promise<void> {
+  const coreContractsDir = process.env.CORE_CONTRACTS_DIR || './contracts/core'
+
+  if (!existsSync(coreContractsDir)) {
+    console.log('⚠️  Core contracts directory not found:', coreContractsDir)
+    console.log('   Skipping core contracts deployment')
+    console.log('')
+    return
+  }
+
+  console.log('📦 Deploying core contracts...')
+
+  const contractFiles = readdirSync(coreContractsDir).filter(f => f.endsWith('.ts'))
+
+  if (contractFiles.length === 0) {
+    console.log('   No contracts found in', coreContractsDir)
+    console.log('')
+    return
+  }
+
+  let deployedCount = 0
+
+  for (const file of contractFiles) {
+    const filePath = `${coreContractsDir}/${file}`
+    const contractName = file.replace('.ts', '')
+
+    try {
+      // Read source code
+      const sourceCode = readFileSync(filePath, 'utf-8')
+
+      // Extract functions
+      const extracted = extractContractFunctions(sourceCode)
+
+      // Calculate code hash
+      const codeHash = hashString(sourceCode)
+
+      // Insert into contracts table
+      await db.insert(contracts).values({
+        ownerId: sovereignUserId,
+        name: contractName,
+        sourceCode,
+        initCode: extracted.initCode,
+        contractCode: extracted.contractCode,
+        getCode: extracted.getCode,
+        postCode: extracted.postCode,
+        hasInit: extracted.hasInit,
+        hasGet: extracted.hasGet,
+        hasPost: extracted.hasPost,
+        version: '1.0.0',
+        isActive: true,
+        deployedInBlock: 0, // Genesis block
+        deploymentTxId: '00000000-0000-0000-0000-000000000000', // Special genesis tx
+        codeHash,
+        metadata: { isCore: true } // Mark as core contract
+      })
+
+      console.log(`  ✅ ${contractName}`)
+      deployedCount++
+    } catch (error: any) {
+      console.log(`  ✗ ${contractName}: ${error.message}`)
+    }
+  }
+
+  console.log(`\n✅ Deployed ${deployedCount} core contract(s)`)
+  console.log('')
+}
 
 async function createGenesisBlock() {
   console.log('🌱 Creating Genesis Block (Block #0)...')
@@ -178,6 +250,9 @@ async function createGenesisBlock() {
       console.log(`  ✅ ${initialBTC.toLocaleString()} BTC`)
       console.log(`  ✅ ${initialETH.toLocaleString()} ETH`)
       console.log('')
+
+      // Deploy core contracts if directory exists
+      await deployCoreContracts(sovereign.id)
     } else {
       console.log('⚠️  No sovereign credentials provided (SOVEREIGN_PUBLIC_KEY not set)')
       console.log('   Sovereign account not created - you can add one later')

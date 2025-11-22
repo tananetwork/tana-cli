@@ -111,10 +111,12 @@ program
   .command('start [mode]')
   .description('Start local chain/node services (mode: tui | webui)')
   .option('-c, --chain <name>', 'Specific chain to start')
+  .option('--genesis', 'Initialize genesis block (first-time setup)')
   .action(async (mode: string | undefined, options) => {
     await commands.start({
       mode,
-      chain: options.chain
+      chain: options.chain,
+      genesis: options.genesis
     })
   })
 

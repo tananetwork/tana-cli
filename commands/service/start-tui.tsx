@@ -15,14 +15,14 @@ import { readGlobalConfig } from '../../utils/config'
 
 type AppState = 'startup' | 'dashboard'
 
-function TUIApp({ chainName }: { chainName?: string }) {
+function TUIApp({ chainName, genesis }: { chainName?: string; genesis?: boolean }) {
   const [appState, setAppState] = useState<AppState>('startup')
   const [networkState, setNetworkState] = useState<NetworkState | null>(null)
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [serviceStatuses, setServiceStatuses] = useState<ServiceStatus[]>([])
 
   // Create StartupManager instance (shared with CLI)
-  const startupManager = useMemo(() => new StartupManager(), [])
+  const startupManager = useMemo(() => new StartupManager(null, genesis), [genesis])
 
   // Initialize service statuses from manager
   useEffect(() => {
@@ -142,7 +142,7 @@ function TUIApp({ chainName }: { chainName?: string }) {
   )
 }
 
-export async function startTUI(chainName?: string) {
+export async function startTUI(chainName?: string, genesis?: boolean) {
   // Determine which chain to start
   let targetChain = chainName
   if (!targetChain) {
@@ -155,7 +155,7 @@ export async function startTUI(chainName?: string) {
   const root = createRoot(renderer)
 
   // Render app
-  root.render(<TUIApp chainName={targetChain} />)
+  root.render(<TUIApp chainName={targetChain} genesis={genesis} />)
 
   // Handle cleanup
   const cleanup = () => {

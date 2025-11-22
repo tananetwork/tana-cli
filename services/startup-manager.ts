@@ -6,7 +6,7 @@
  */
 
 import { spawn, type Subprocess } from 'bun'
-import { existsSync } from 'fs'
+import { existsSync, readdirSync } from 'fs'
 import { EventEmitter } from 'events'
 import { Client } from 'pg'
 import Redis from 'ioredis'
@@ -111,10 +111,12 @@ export class StartupManager extends EventEmitter {
   private processes: Map<string, Subprocess> = new Map()
   private statuses: Map<string, ServiceStatus> = new Map()
   private chainConfig: ChainConfig | null = null
+  private genesis: boolean = false
 
-  constructor(chainConfig?: ChainConfig | null) {
+  constructor(chainConfig?: ChainConfig | null, genesis?: boolean) {
     super()
     this.chainConfig = chainConfig || null
+    this.genesis = genesis || false
 
     // Initialize all services as stopped
     SERVICES.forEach(service => {
@@ -135,8 +137,25 @@ export class StartupManager extends EventEmitter {
       // Check Docker is running
       await this.checkDockerRunning()
 
-      // Start services in order
-      for (const service of SERVICES) {
+      // Validate chain exists (but don't fail yet if genesis mode)
+      if (!this.genesis) {
+        await this.validateChainExists()
+      }
+
+      // Start Docker infrastructure first (postgres, redis)
+      const dockerServices = SERVICES.filter(s => s.type === 'docker')
+      for (const service of dockerServices) {
+        await this.startService(service)
+      }
+
+      // Initialize genesis after database is up (if --genesis flag)
+      if (this.genesis) {
+        await this.initializeGenesis()
+      }
+
+      // Start Tana services (mesh, t4, ledger, etc.)
+      const tanaServices = SERVICES.filter(s => s.type === 'tana')
+      for (const service of tanaServices) {
         await this.startService(service)
       }
 
@@ -270,14 +289,14 @@ export class StartupManager extends EventEmitter {
   private async startDockerService(service: ServiceInfo): Promise<void> {
     const composePath = this.getDockerComposePath()
 
-    // Check if already running
-    const checkProc = spawn(['docker', 'ps', '--filter', `name=tana-${service.name}`, '--format', '{{.Names}}'], {
+    // Check if already running (matches any container with service name)
+    const checkProc = spawn(['docker', 'ps', '--filter', `name=${service.name}`, '--format', '{{.Names}}'], {
       stdout: 'pipe'
     })
     await checkProc.exited
     const running = (await new Response(checkProc.stdout).text()).trim()
 
-    if (running.includes(`tana-${service.name}`)) {
+    if (running && running.includes(service.name)) {
       this.emit('message', `${service.displayName} already running`)
       return
     }
@@ -429,6 +448,210 @@ export class StartupManager extends EventEmitter {
    */
   static getServices(): ServiceInfo[] {
     return SERVICES
+  }
+
+  /**
+   * Validate that the blockchain has been initialized
+   */
+  private async validateChainExists(): Promise<void> {
+    this.emit('message', 'Validating blockchain state...')
+
+    // Check if PostgreSQL is accessible
+    const postgresUrl = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+
+    try {
+      const client = new Client({ connectionString: postgresUrl })
+      await client.connect()
+
+      // Check if genesis block exists
+      const result = await client.query('SELECT height FROM blocks WHERE height = 0')
+
+      await client.end()
+
+      if (result.rows.length === 0) {
+        throw new Error(
+          'Chain not initialized. Genesis block does not exist.\n\n' +
+          '📋 First-time setup required:\n' +
+          '   Run: tana start --genesis\n\n' +
+          'This will create the genesis block and initialize the blockchain.'
+        )
+      }
+
+      this.emit('message', 'Blockchain state validated (genesis block exists)')
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Chain not initialized')) {
+        throw error
+      }
+
+      // If we can't connect to PostgreSQL, it might not be running yet
+      // This is okay - we'll start it next
+      this.emit('message', 'Skipping blockchain validation (PostgreSQL not yet running)')
+    }
+  }
+
+  /**
+   * Initialize genesis block (first-time setup)
+   */
+  private async initializeGenesis(): Promise<void> {
+    this.emit('message', 'Initializing genesis block...')
+
+    // 1. Check if genesis already exists
+    const postgresUrl = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+
+    try {
+      const client = new Client({ connectionString: postgresUrl })
+      await client.connect()
+
+      const result = await client.query('SELECT height FROM blocks WHERE height = 0')
+
+      await client.end()
+
+      if (result.rows.length > 0) {
+        throw new Error(
+          'Chain already initialized. Genesis block already exists.\n\n' +
+          '✓ Blockchain is ready to use\n' +
+          '   Run: tana start (without --genesis flag)\n\n' +
+          'The --genesis flag is only for first-time initialization.'
+        )
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Chain already initialized')) {
+        throw error
+      }
+      // PostgreSQL might not be running yet, continue
+    }
+
+    // 2. Check if sovereign user exists
+    const sovereignUser = this.getSovereignUser()
+    if (!sovereignUser) {
+      throw new Error(
+        'No sovereign user found. A sovereign user must be created first.\n\n' +
+        '📋 Create your first user:\n' +
+        '   Run: tana new user <username>\n\n' +
+        'The first user created becomes the sovereign (chain administrator).\n' +
+        'After creating a user, run: tana start --genesis'
+      )
+    }
+
+    this.emit('message', `Sovereign user: ${sovereignUser.username} (${sovereignUser.publicKey})`)
+
+    // 3. Check if core contracts directory exists (required)
+    const coreContractsDir = this.chainConfig?.coreContracts?.dir || './contracts/core'
+    if (!existsSync(coreContractsDir)) {
+      throw new Error(
+        '⚠️  Genesis Error: Core contracts directory not found\n\n' +
+        `Expected directory: ${coreContractsDir}\n\n` +
+        'Genesis requires core contracts to be deployed.\n\n' +
+        'Create the directory and add core contracts:\n' +
+        `  mkdir -p ${coreContractsDir}\n` +
+        `  # Add your core contract .ts files to ${coreContractsDir}\n\n` +
+        'Then try again:\n' +
+        '  tana start --genesis'
+      )
+    }
+
+    const contractFiles = readdirSync(coreContractsDir).filter(f => f.endsWith('.ts'))
+    if (contractFiles.length === 0) {
+      throw new Error(
+        '⚠️  Genesis Error: No core contracts found\n\n' +
+        `Directory exists but is empty: ${coreContractsDir}\n\n` +
+        'Genesis requires at least one core contract to deploy.\n\n' +
+        'Add core contract files:\n' +
+        `  # Place .ts contract files in ${coreContractsDir}\n\n` +
+        'Then try again:\n' +
+        '  tana start --genesis'
+      )
+    }
+
+    this.emit('message', `Found ${contractFiles.length} core contract(s) to deploy`)
+
+    // 4. Run genesis initialization script
+    this.emit('message', 'Creating genesis block...')
+    await this.runGenesisScript(sovereignUser)
+  }
+
+  /**
+   * Get sovereign user from ~/.config/tana/users/
+   */
+  private getSovereignUser(): { username: string; publicKey: string; displayName: string } | null {
+    const usersDir = `${process.env.HOME}/.config/tana/users`
+
+    if (!existsSync(usersDir)) {
+      return null
+    }
+
+    const files = readdirSync(usersDir).filter(f => f.endsWith('.json'))
+
+    if (files.length === 0) {
+      return null
+    }
+
+    // First user is sovereign
+    const firstUserFile = `${usersDir}/${files[0]}`
+    const userData = JSON.parse(require('fs').readFileSync(firstUserFile, 'utf-8'))
+
+    return {
+      username: userData.username,
+      publicKey: userData.publicKey,
+      displayName: userData.displayName || userData.username
+    }
+  }
+
+  /**
+   * Run genesis block creation script
+   */
+  private async runGenesisScript(sovereignUser: { username: string; publicKey: string; displayName: string }): Promise<void> {
+    const ledgerPath = '/Users/samifouad/Projects/tana/cli/services/ledger'
+    const scriptPath = `${ledgerPath}/src/scripts/create-genesis.ts`
+
+    // Set environment variables for sovereign user
+    const env = {
+      ...process.env,
+      SOVEREIGN_PUBLIC_KEY: sovereignUser.publicKey,
+      SOVEREIGN_USERNAME: sovereignUser.username,
+      SOVEREIGN_DISPLAY_NAME: sovereignUser.displayName,
+      DATABASE_URL: this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+    }
+
+    this.emit('message', 'Running genesis creation script...')
+
+    const proc = spawn(['bun', 'run', scriptPath], {
+      cwd: ledgerPath,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    })
+
+    // Stream output to user
+    const decoder = new TextDecoder()
+
+    // Read stdout
+    if (proc.stdout) {
+      const reader = proc.stdout.getReader()
+      const readStdout = async () => {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const text = decoder.decode(value)
+          // Emit each line as a message
+          text.split('\n').forEach(line => {
+            if (line.trim()) {
+              this.emit('message', line)
+            }
+          })
+        }
+      }
+      readStdout().catch(() => {}) // Fire and forget
+    }
+
+    const exitCode = await proc.exited
+
+    if (exitCode !== 0) {
+      const stderr = proc.stderr ? await new Response(proc.stderr).text() : ''
+      throw new Error(`Genesis creation failed: ${stderr}`)
+    }
+
+    this.emit('message', '✅ Genesis block created successfully')
   }
 
   /**

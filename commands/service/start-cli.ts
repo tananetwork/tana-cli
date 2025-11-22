@@ -7,9 +7,9 @@
 import chalk from 'chalk'
 import { createSpinner } from 'nanospinner'
 import { StartupManager } from '../../services/startup-manager'
-import { readGlobalConfig } from '../../utils/config'
+import { readGlobalConfig, readChainConfig } from '../../utils/config'
 
-export async function startCLI(chainName?: string) {
+export async function startCLI(chainName?: string, genesis?: boolean) {
   console.log(chalk.bold('\n🚀 Starting Tana...\n'))
 
   // Determine which chain to start
@@ -20,9 +20,14 @@ export async function startCLI(chainName?: string) {
   }
 
   console.log(chalk.gray(`Chain: ${chalk.cyan(targetChain)}`))
+  if (genesis) {
+    console.log(chalk.gray(`Mode: ${chalk.yellow('Genesis initialization')}`))
+  }
   console.log()
 
-  const manager = new StartupManager()
+  // Load chain configuration
+  const chainConfig = readChainConfig(targetChain)
+  const manager = new StartupManager(chainConfig, genesis)
   const spinners = new Map<string, ReturnType<typeof createSpinner>>()
 
   // Listen to events

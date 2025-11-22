@@ -11,10 +11,9 @@
 import chalk from 'chalk'
 import { isLedgerReachable, getLedgerUrl } from '../../utils/config'
 import { startCLI } from './start-cli'
-import { startTUI } from './start-tui'
 import { startWeb } from './start-web'
 
-export async function start(options: { mode?: string; chain?: string } = {}) {
+export async function start(options: { mode?: string; chain?: string; genesis?: boolean } = {}) {
   // Check if already running
   const ledgerUrl = getLedgerUrl()
   if (await isLedgerReachable()) {
@@ -25,18 +24,19 @@ export async function start(options: { mode?: string; chain?: string } = {}) {
 
   switch (options.mode) {
     case 'tui':
-      // Launch TUI mode (terminal dashboard)
-      await startTUI(options.chain)
+      // Launch TUI mode (terminal dashboard) - dynamic import to avoid loading deps
+      const { startTUI } = await import('./start-tui')
+      await startTUI(options.chain, options.genesis)
       break
 
     case 'webui':
       // Launch WebUI mode (browser dashboard)
-      await startWeb(options.chain)
+      await startWeb(options.chain, options.genesis)
       break
 
     default:
       // Launch CLI mode (spinners, logs)
-      await startCLI(options.chain)
+      await startCLI(options.chain, options.genesis)
       break
   }
 }

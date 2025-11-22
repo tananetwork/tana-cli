@@ -11,7 +11,7 @@ import { StartupManager } from '../../services/startup-manager'
 import { readGlobalConfig } from '../../utils/config'
 import { spawn } from 'bun'
 
-export async function startWeb(chainName?: string) {
+export async function startWeb(chainName?: string, genesis?: boolean) {
   console.log(chalk.bold('\n🌐 Starting Tana Web Dashboard...\n'))
 
   // Determine which chain to start
@@ -22,9 +22,12 @@ export async function startWeb(chainName?: string) {
   }
 
   console.log(chalk.gray(`Chain: ${chalk.cyan(targetChain)}`))
+  if (genesis) {
+    console.log(chalk.gray(`Mode: ${chalk.yellow('Genesis initialization')}`))
+  }
   console.log()
 
-  const manager = new StartupManager()
+  const manager = new StartupManager(null, genesis)
   const spinners = new Map<string, ReturnType<typeof createSpinner>>()
   let topologyReady = false
 
