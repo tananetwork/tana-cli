@@ -141,11 +141,14 @@ async function checkDependencies() {
   }
 
   // Check Redis connection by attempting to initialize streams
+  // Redis is optional for basic ledger functionality (used for tx queue)
   try {
     await initializeRedisStreams()
     console.log(`✓ Transaction queue initialized (Redis connected)`)
   } catch (err: any) {
-    errors.push(`Redis connection failed: ${err.message}`)
+    console.warn(`⚠️  Redis connection failed: ${err.message}`)
+    console.warn('   Transaction queue will not be available')
+    console.warn('   Run: docker-compose up -d redis')
   }
 
   if (errors.length > 0) {
