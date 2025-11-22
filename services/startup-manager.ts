@@ -187,7 +187,7 @@ export class StartupManager extends EventEmitter {
       // This ensures migrations have run and database tables exist
       if (this.genesis) {
         this.emit('message', 'Waiting for ledger service to complete migrations...')
-        await new Promise(resolve => setTimeout(resolve, 3000)) // Wait for migrations
+        await this.waitForMigrations()
         await this.initializeGenesis()
       }
 
@@ -657,6 +657,51 @@ export class StartupManager extends EventEmitter {
       // Don't fail - let the ledger service handle migrations
       this.emit('message', `Note: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  /**
+   * Wait for ledger migrations to complete
+   */
+  private async waitForMigrations(maxRetries = 30): Promise<void> {
+    const dbUrl = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432'
+    const match = dbUrl.match(/postgres:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/?(.*)?/)
+    if (!match) {
+      throw new Error(`Invalid postgres URL: ${dbUrl}`)
+    }
+
+    const [_, user, password, host, port, database] = match
+    const dbName = database || 'tana'
+
+    for (let i = 0; i < maxRetries; i++) {
+      const client = new Client({ host, port: parseInt(port), user, password, database: dbName })
+
+      try {
+        await client.connect()
+
+        const result = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM pg_tables
+            WHERE schemaname = 'public'
+            AND tablename = 'blocks'
+          )
+        `)
+
+        await client.end()
+
+        if (result.rows[0].exists) {
+          this.emit('message', '✓ Migrations complete - blocks table exists')
+          return
+        }
+
+        // Wait 1 second before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      } catch (error) {
+        await client.end().catch(() => {})
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    throw new Error('Timeout waiting for migrations to complete')
   }
 
   /**
