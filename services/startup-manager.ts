@@ -13,7 +13,7 @@ import Redis from 'ioredis'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import * as ed from '@noble/ed25519'
-import { sha512 } from '@noble/hashes/sha2'
+import { sha512 } from '@noble/hashes/sha2.js'
 import {
   validateRequiredServices,
   getValidatorConfig,
@@ -684,7 +684,8 @@ export class StartupManager extends EventEmitter {
       ledger: `${basePath}/cli/services/ledger`,
       identity: `${basePath}/cli/services/identity`,
       notifications: `${basePath}/cli/services/notifications`,
-      topology: `${basePath}/cli/services/topology`
+      topology: `${basePath}/cli/services/topology`,
+      consensus: `${basePath}/cli/services/consensus`
     }
 
     const path = paths[serviceName]
