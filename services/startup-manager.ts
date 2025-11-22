@@ -169,6 +169,9 @@ export class StartupManager extends EventEmitter {
         await this.startService(service)
       }
 
+      // Ensure database exists and migrations have run
+      await this.ensureDatabase()
+
       // Initialize genesis after database is up (if --genesis flag)
       if (this.genesis) {
         await this.initializeGenesis()
@@ -552,6 +555,100 @@ export class StartupManager extends EventEmitter {
     }
 
     throw new Error(`Container not found or not running (tried: ${possibleNames.join(', ')})`)
+  }
+
+  /**
+   * Ensure database exists and run migrations
+   */
+  private async ensureDatabase(): Promise<void> {
+    this.emit('message', 'Checking database...')
+
+    const dbUrl = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432'
+
+    // Parse database URL to get connection details
+    const match = dbUrl.match(/postgres:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/?(.*)?/)
+    if (!match) {
+      throw new Error(`Invalid postgres URL: ${dbUrl}`)
+    }
+
+    const [_, user, password, host, port, database] = match
+    const dbName = database || 'tana'
+
+    // Connect to default 'postgres' database to create 'tana' if needed
+    const client = new Client({
+      host,
+      port: parseInt(port),
+      user,
+      password,
+      database: 'postgres' // Connect to default database first
+    })
+
+    try {
+      await client.connect()
+
+      // Check if 'tana' database exists
+      const result = await client.query(
+        `SELECT 1 FROM pg_database WHERE datname = $1`,
+        [dbName]
+      )
+
+      if (result.rows.length === 0) {
+        this.emit('message', `Creating database '${dbName}'...`)
+        await client.query(`CREATE DATABASE ${dbName}`)
+        this.emit('message', `✓ Database '${dbName}' created`)
+      } else {
+        this.emit('message', `✓ Database '${dbName}' exists`)
+      }
+
+      await client.end()
+
+      // Now run migrations on the 'tana' database
+      await this.runMigrations(dbName, host, port, user, password)
+
+    } catch (error) {
+      await client.end().catch(() => {})
+      throw new Error(`Database setup failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Run database migrations
+   */
+  private async runMigrations(database: string, host: string, port: string, user: string, password: string): Promise<void> {
+    this.emit('message', 'Running database migrations...')
+
+    const client = new Client({
+      host,
+      port: parseInt(port),
+      user,
+      password,
+      database
+    })
+
+    try {
+      await client.connect()
+
+      // Check if migrations table exists
+      const tableCheck = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM pg_tables
+          WHERE schemaname = 'public'
+          AND tablename = 'blocks'
+        )
+      `)
+
+      if (tableCheck.rows[0].exists) {
+        this.emit('message', '✓ Migrations already applied')
+      } else {
+        this.emit('message', '⏭️  Migrations will run on first ledger service start')
+      }
+
+      await client.end()
+    } catch (error) {
+      await client.end().catch(() => {})
+      // Don't fail - let the ledger service handle migrations
+      this.emit('message', `Note: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**
