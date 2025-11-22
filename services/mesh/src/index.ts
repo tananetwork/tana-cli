@@ -13,6 +13,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { db, queries, isSovereign } from './db'
 import { verifySignature } from '@tananetwork/crypto'
+import { startVisualizer } from './visualizer'
 
 const PORT = parseInt(process.env.MESH_PORT || '8190', 10)
 const HEARTBEAT_TIMEOUT = 5 * 60 * 1000 // 5 minutes
@@ -558,6 +559,9 @@ console.log('    GET    /info                  - Service info')
 console.log('')
 console.log('━'.repeat(60))
 console.log('')
+
+// Start WebSocket visualizer (replaces topology service)
+startVisualizer()
 
 export default {
   port: PORT,
