@@ -605,7 +605,23 @@ export class StartupManager extends EventEmitter {
         await client.query(`CREATE DATABASE ${dbName}`)
         this.emit('message', `✓ Database '${dbName}' created`)
       } else {
-        this.emit('message', `✓ Database '${dbName}' exists`)
+        // If genesis mode, drop and recreate for fresh start
+        if (this.genesis) {
+          this.emit('message', `Genesis mode: Dropping existing database '${dbName}'...`)
+          // Close any active connections first
+          await client.query(`
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = '${dbName}'
+            AND pid <> pg_backend_pid()
+          `)
+          await client.query(`DROP DATABASE IF EXISTS ${dbName}`)
+          this.emit('message', `Creating fresh database '${dbName}'...`)
+          await client.query(`CREATE DATABASE ${dbName}`)
+          this.emit('message', `✓ Fresh database '${dbName}' created`)
+        } else {
+          this.emit('message', `✓ Database '${dbName}' exists`)
+        }
       }
 
       await client.end()
