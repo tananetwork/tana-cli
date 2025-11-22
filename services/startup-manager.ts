@@ -6,7 +6,7 @@
  */
 
 import { spawn, type Subprocess } from 'bun'
-import { existsSync, readdirSync, writeFileSync } from 'fs'
+import { existsSync, readdirSync, writeFileSync, mkdirSync, readFileSync, unlinkSync } from 'fs'
 import { EventEmitter } from 'events'
 import { Client } from 'pg'
 import Redis from 'ioredis'
@@ -24,6 +24,9 @@ import {
   type ServiceName,
   REQUIRED_SERVICES
 } from '../utils/config'
+
+// PIDs directory for background process tracking
+const PIDS_DIR = join(CONFIG_DIR, 'pids')
 
 // Configure noble/ed25519 with SHA512 (required for keypair generation)
 // Noble/ed25519 v3 requires setting ed.hashes.sha512
@@ -505,10 +508,17 @@ export class StartupManager extends EventEmitter {
       cwd: servicePath,
       env: serviceEnv,
       stdout: 'pipe',
-      stderr: 'pipe'
+      stderr: 'pipe',
+      detached: true  // Run as independent process (survives parent exit)
     })
 
     this.processes.set(service.name, proc)
+
+    // Save PID for background tracking
+    this.savePID(service.name, proc.pid)
+
+    // Unref the process so it doesn't keep parent alive
+    proc.unref()
 
     // Wait a bit for startup
     await new Promise(resolve => setTimeout(resolve, 1000))
@@ -1071,18 +1081,130 @@ export class StartupManager extends EventEmitter {
   }
 
   /**
+   * Save PID to disk for background process tracking
+   */
+  private savePID(serviceName: string, pid: number): void {
+    // Ensure PIDs directory exists
+    if (!existsSync(PIDS_DIR)) {
+      mkdirSync(PIDS_DIR, { recursive: true })
+    }
+
+    const pidFile = join(PIDS_DIR, `${serviceName}.pid`)
+    writeFileSync(pidFile, String(pid))
+  }
+
+  /**
+   * Read PID from disk
+   */
+  private readPID(serviceName: string): number | null {
+    const pidFile = join(PIDS_DIR, `${serviceName}.pid`)
+    if (!existsSync(pidFile)) {
+      return null
+    }
+
+    try {
+      const pid = parseInt(readFileSync(pidFile, 'utf-8').trim())
+      return isNaN(pid) ? null : pid
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Delete PID file
+   */
+  private deletePID(serviceName: string): void {
+    const pidFile = join(PIDS_DIR, `${serviceName}.pid`)
+    if (existsSync(pidFile)) {
+      unlinkSync(pidFile)
+    }
+  }
+
+  /**
+   * Check if process is running
+   */
+  private isProcessRunning(pid: number): boolean {
+    try {
+      // Signal 0 checks if process exists without killing it
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Get all running service PIDs (static method for tana stop command)
+   */
+  static getRunningPIDs(): Map<string, number> {
+    const pids = new Map<string, number>()
+
+    if (!existsSync(PIDS_DIR)) {
+      return pids
+    }
+
+    const files = readdirSync(PIDS_DIR)
+    for (const file of files) {
+      if (file.endsWith('.pid')) {
+        const serviceName = file.replace('.pid', '')
+        const pidFile = join(PIDS_DIR, file)
+
+        try {
+          const pid = parseInt(readFileSync(pidFile, 'utf-8').trim())
+          if (!isNaN(pid)) {
+            pids.set(serviceName, pid)
+          }
+        } catch {
+          // Ignore invalid PID files
+        }
+      }
+    }
+
+    return pids
+  }
+
+  /**
+   * Kill a process by PID (static method for tana stop command)
+   */
+  static killProcess(pid: number): boolean {
+    try {
+      process.kill(pid, 'SIGTERM')
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Stop all services
    */
   async stopAll(): Promise<void> {
     this.emit('message', 'Stopping services...')
 
-    // Stop Tana services
+    // Stop Tana services (from in-memory processes)
     for (const [name, proc] of this.processes.entries()) {
       try {
-        proc.kill()
+        proc.kill('SIGTERM')
+        this.deletePID(name)
         this.updateStatus(name, 'stopped')
       } catch (error) {
         this.emit('error', `Failed to stop ${name}: ${error}`)
+      }
+    }
+
+    // Also stop any processes tracked via PID files (in case manager was restarted)
+    const pids = StartupManager.getRunningPIDs()
+    for (const [serviceName, pid] of pids.entries()) {
+      if (this.isProcessRunning(pid)) {
+        try {
+          process.kill(pid, 'SIGTERM')
+          this.deletePID(serviceName)
+        } catch (error) {
+          this.emit('error', `Failed to stop ${serviceName} (PID ${pid}): ${error}`)
+        }
+      } else {
+        // Process already dead, just clean up PID file
+        this.deletePID(serviceName)
       }
     }
 

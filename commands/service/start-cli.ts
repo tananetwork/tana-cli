@@ -79,8 +79,8 @@ export async function startCLI(chainName?: string, genesis?: boolean) {
   try {
     await manager.startAll()
 
-    // Keep process alive
-    await new Promise(() => {})
+    // Services are now running in background (detached processes)
+    // No need to keep this process alive - exit cleanly
   } catch (error) {
     console.error(chalk.red(`\n✗ Startup failed: ${error}\n`))
     await manager.stopAll()

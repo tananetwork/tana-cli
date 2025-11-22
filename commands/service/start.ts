@@ -31,9 +31,12 @@ export async function start(options: { mode?: string; chain?: string; genesis?: 
       // Only CLI mode prevents duplicate startup
       const ledgerUrl = getLedgerUrl()
       if (await isLedgerReachable()) {
-        console.log(chalk.yellow(`✗ Ledger already running at ${ledgerUrl}`))
-        console.log(chalk.gray(`\nStop the other instance first, or use a different port.\n`))
-        process.exit(1)
+        console.log(chalk.green(`✓ Services already running at ${ledgerUrl}\n`))
+        console.log(chalk.gray('To view dashboard:  ') + chalk.cyan('tana start webui'))
+        console.log(chalk.gray('To stop services:   ') + chalk.cyan('tana stop'))
+        console.log(chalk.gray('To view status:     ') + chalk.cyan('tana status'))
+        console.log()
+        process.exit(0) // Exit cleanly (not an error)
       }
       await startCLI(options.chain, options.genesis)
       break
