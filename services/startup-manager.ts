@@ -247,6 +247,9 @@ export class StartupManager extends EventEmitter {
       // Health check
       if (service.healthCheck) {
         await this.waitForHealthCheck(service.name, service.healthCheck)
+      } else if (service.name === 'redis') {
+        // Special handling for Redis - wait for it to accept connections
+        await this.waitForRedis()
       } else if (service.type === 'docker') {
         // For Docker services without HTTP, check if container is running
         await this.checkDockerContainer(service.name)
@@ -522,6 +525,33 @@ export class StartupManager extends EventEmitter {
       await new Promise(resolve => setTimeout(resolve, 1000))
     }
     throw new Error('Health check timeout')
+  }
+
+  /**
+   * Wait for Redis to be ready
+   */
+  private async waitForRedis(maxRetries = 30): Promise<void> {
+    const redisUrl = this.chainConfig?.redis?.url || 'redis://localhost:6379'
+
+    for (let i = 0; i < maxRetries; i++) {
+      const client = new Redis(redisUrl, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 1,
+        retryStrategy: () => null  // Don't retry, we'll handle it ourselves
+      })
+
+      try {
+        await client.connect()
+        await client.ping()
+        await client.quit()
+        return // Redis is ready!
+      } catch (error) {
+        await client.quit().catch(() => {})
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    throw new Error('Redis health check timeout')
   }
 
   /**
