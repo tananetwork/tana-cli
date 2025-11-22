@@ -8,7 +8,7 @@
 import chalk from 'chalk'
 import { createSpinner } from 'nanospinner'
 import { StartupManager } from '../../services/startup-manager'
-import { readGlobalConfig } from '../../utils/config'
+import { readGlobalConfig, isLedgerReachable, getLedgerUrl } from '../../utils/config'
 import { spawn } from 'bun'
 
 export async function startWeb(chainName?: string, genesis?: boolean) {
@@ -26,6 +26,22 @@ export async function startWeb(chainName?: string, genesis?: boolean) {
     console.log(chalk.gray(`Mode: ${chalk.yellow('Genesis initialization')}`))
   }
   console.log()
+
+  // Check if services are already running
+  const servicesRunning = await isLedgerReachable()
+
+  if (servicesRunning) {
+    const ledgerUrl = getLedgerUrl()
+    console.log(chalk.green(`✓ Services already running at ${ledgerUrl}`))
+    console.log(chalk.gray('  Skipping startup, launching dashboard...\n'))
+
+    // Just launch the dashboard
+    await startFrontendServer()
+
+    // Keep process alive
+    await new Promise(() => {})
+    return
+  }
 
   const manager = new StartupManager(null, genesis)
   const spinners = new Map<string, ReturnType<typeof createSpinner>>()

@@ -14,14 +14,6 @@ import { startCLI } from './start-cli'
 import { startWeb } from './start-web'
 
 export async function start(options: { mode?: string; chain?: string; genesis?: boolean } = {}) {
-  // Check if already running
-  const ledgerUrl = getLedgerUrl()
-  if (await isLedgerReachable()) {
-    console.log(chalk.yellow(`✗ Ledger already running at ${ledgerUrl}`))
-    console.log(chalk.gray(`\nStop the other instance first, or use a different port.\n`))
-    process.exit(1)
-  }
-
   switch (options.mode) {
     case 'tui':
       // Launch TUI mode (terminal dashboard) - dynamic import to avoid loading deps
@@ -36,6 +28,13 @@ export async function start(options: { mode?: string; chain?: string; genesis?: 
 
     default:
       // Launch CLI mode (spinners, logs)
+      // Only CLI mode prevents duplicate startup
+      const ledgerUrl = getLedgerUrl()
+      if (await isLedgerReachable()) {
+        console.log(chalk.yellow(`✗ Ledger already running at ${ledgerUrl}`))
+        console.log(chalk.gray(`\nStop the other instance first, or use a different port.\n`))
+        process.exit(1)
+      }
       await startCLI(options.chain, options.genesis)
       break
   }
