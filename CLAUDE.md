@@ -2,8 +2,8 @@
 
 This file provides guidance to Claude Code when working with the Tana CLI project.
 
-**Last Updated:** November 21, 2025
-**MVP Progress:** ~70% complete
+**Last Updated:** November 22, 2025
+**MVP Progress:** ~75% complete
 **Target:** Mid-December 2025
 
 ---
@@ -107,23 +107,39 @@ This file provides guidance to Claude Code when working with the Tana CLI projec
 
 ---
 
-### Phase 3: Multi-Validator Consensus (5-7 days)
+### Phase 3: Multi-Validator Consensus (5-7 days) - ✅ PARTIALLY COMPLETE
 
-**6. Multi-Validator Consensus Integration**
+**6. Automatic Validator Initialization** ✅ **COMPLETED (Nov 22, 2025)**
+- **Files Modified:**
+  - `services/startup-manager.ts` (added `ensureValidator()` method)
+  - `commands/init/validator.ts` (fixed validator ID generation)
+- **Implementation:**
+  - ✅ Validators now auto-create on `tana start` if missing
+  - ✅ Generates Ed25519 keypair using noble/ed25519
+  - ✅ Creates `~/.config/tana/validator.json` with defaults:
+    - Auto-generated validator ID (e.g., `val_386dd37a`)
+    - WS port: 9000, HTTP API port: 9001
+    - No peers (standalone mode)
+  - ✅ Configured noble/ed25519 with SHA512 hash function
+  - ✅ Fixed validator ID to properly skip "ed25519_" prefix
+- **Result:** Validators are now a built-in part of every node (perfect for local dev/testnet)
+
+**7. Multi-Validator Network & BFT** 🔄 **REMAINING**
 - **Files:**
   - `services/consensus/` (already exists)
-  - `services/ledger/src/events/block-listener.ts`
-- **Task:** Enable BFT consensus for block finalization
+  - `services/ledger/src/scripts/produce-block.ts` (consensus already integrated)
+- **Task:** Test and validate multi-validator consensus
 - **Implementation:**
-  - Configure multiple validators (3-6 nodes)
-  - Wire consensus service to ledger
-  - Implement leader rotation
-  - Add vote collection and finalization
-  - Handle Byzantine faults (up to f=1 for 4 validators)
+  - ✅ Consensus service exists and is wired to startup-manager
+  - ✅ Automatic activation when validatorCount >= 2 (already implemented)
+  - ✅ Leader rotation based on `height % validatorCount`
+  - 🔄 Test with 3-validator network locally
+  - 🔄 Verify block proposals and quorum voting
+  - 🔄 Test Byzantine fault tolerance
 - **Testing:**
-  - Start 3-validator network locally
-  - Verify block proposals
-  - Test leader rotation
+  - Start 3-validator network locally (use `tana init validator --peers`)
+  - Verify block proposals reach quorum
+  - Test leader rotation across heights
   - Inject Byzantine behavior (kill validator, network partition)
   - Verify recovery and continued finality
 

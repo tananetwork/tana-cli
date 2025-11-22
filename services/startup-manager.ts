@@ -6,16 +6,26 @@
  */
 
 import { spawn, type Subprocess } from 'bun'
-import { existsSync, readdirSync } from 'fs'
+import { existsSync, readdirSync, writeFileSync } from 'fs'
 import { EventEmitter } from 'events'
 import { Client } from 'pg'
 import Redis from 'ioredis'
+import { join } from 'path'
+import { createHash } from 'crypto'
+import * as ed from '@noble/ed25519'
 import {
   validateRequiredServices,
+  getValidatorConfig,
+  saveValidatorConfig,
+  ensureConfigDirs,
+  CONFIG_DIR,
   type ChainConfig,
   type ServiceName,
   REQUIRED_SERVICES
 } from '../utils/config'
+
+// Configure noble/ed25519 with SHA512
+ed.etc.sha512Sync = (...m) => createHash('sha512').update(Buffer.concat(m)).digest()
 
 export type ServiceStatus = 'stopped' | 'starting' | 'running' | 'failed'
 
@@ -104,6 +114,14 @@ const SERVICES: ServiceInfo[] = [
     port: 8191,
     required: false,
     healthCheck: 'http://localhost:3001/health'
+  },
+  {
+    name: 'consensus',
+    displayName: 'Consensus',
+    type: 'tana',
+    port: 9001,  // HTTP API port
+    required: false,
+    healthCheck: 'http://localhost:9001/health'
   }
 ]
 
@@ -137,6 +155,9 @@ export class StartupManager extends EventEmitter {
       // Check Docker is running
       await this.checkDockerRunning()
 
+      // Ensure validator exists (auto-create if missing)
+      await this.ensureValidator()
+
       // Validate chain exists (but don't fail yet if genesis mode)
       if (!this.genesis) {
         await this.validateChainExists()
@@ -153,7 +174,7 @@ export class StartupManager extends EventEmitter {
         await this.initializeGenesis()
       }
 
-      // Start Tana services (mesh, t4, ledger, etc.)
+      // Start Tana services (mesh, t4, ledger, consensus, etc.)
       const tanaServices = SERVICES.filter(s => s.type === 'tana')
       for (const service of tanaServices) {
         await this.startService(service)
@@ -232,7 +253,7 @@ export class StartupManager extends EventEmitter {
   }
 
   /**
-   * Check if Docker daemon is running
+   * Check if Docker daemon is running (and start it if not)
    */
   private async checkDockerRunning(): Promise<void> {
     this.emit('message', 'Checking Docker...')
@@ -248,7 +269,7 @@ export class StartupManager extends EventEmitter {
           '📦 Install Docker:\n' +
           '   • macOS/Windows: https://www.docker.com/products/docker-desktop\n' +
           '   • Linux: https://docs.docker.com/engine/install/\n\n' +
-          'After installing, start Docker and try again.')
+          'After installing, run `tana start` again.')
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('not installed')) {
@@ -258,29 +279,118 @@ export class StartupManager extends EventEmitter {
     }
 
     // Check if Docker daemon is running
+    const isRunning = await this.isDockerDaemonRunning()
+
+    if (!isRunning) {
+      // Try to start Docker automatically
+      await this.startDocker()
+
+      // Wait for Docker daemon to be ready
+      await this.waitForDockerDaemon()
+    }
+  }
+
+  /**
+   * Check if Docker daemon is responding
+   */
+  private async isDockerDaemonRunning(): Promise<boolean> {
     try {
-      const proc = spawn(['docker', 'info'], { stdout: 'ignore', stderr: 'pipe' })
+      const proc = spawn(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' })
       const exitCode = await proc.exited
+      return exitCode === 0
+    } catch {
+      return false
+    }
+  }
 
-      if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text()
+  /**
+   * Start Docker Desktop / Docker daemon
+   */
+  private async startDocker(): Promise<void> {
+    this.emit('message', 'Docker not running. Starting Docker...')
 
-        if (stderr.includes('Cannot connect') || stderr.includes('connection refused')) {
-          throw new Error('Docker is installed but not running.\n\n' +
-            '🐳 Start Docker:\n' +
-            '   • macOS/Windows: Open Docker Desktop\n' +
-            '   • Linux: sudo systemctl start docker\n\n' +
-            'Then try again.')
+    const platform = process.platform
+
+    if (platform === 'darwin') {
+      // macOS: Start Docker Desktop
+      try {
+        const proc = spawn(['open', '-a', 'Docker'], { stdout: 'ignore', stderr: 'pipe' })
+        const exitCode = await proc.exited
+
+        if (exitCode !== 0) {
+          const stderr = await new Response(proc.stderr).text()
+          throw new Error(`Failed to start Docker Desktop: ${stderr}`)
         }
 
-        throw new Error('Docker daemon not responding')
+        this.emit('message', 'Docker Desktop is starting...')
+      } catch (error) {
+        throw new Error('Failed to start Docker Desktop.\n\n' +
+          '🐳 Please start Docker Desktop manually:\n' +
+          '   • Open Docker Desktop from Applications\n' +
+          '   • Wait for it to finish starting\n' +
+          '   • Then run: tana start')
       }
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error
+    } else if (platform === 'linux') {
+      // Linux: Try systemctl (may require sudo)
+      this.emit('message', 'Attempting to start Docker daemon...')
+
+      try {
+        const proc = spawn(['systemctl', 'start', 'docker'], { stdout: 'ignore', stderr: 'pipe' })
+        const exitCode = await proc.exited
+
+        if (exitCode !== 0) {
+          // Try with sudo
+          const sudoProc = spawn(['sudo', 'systemctl', 'start', 'docker'], {
+            stdout: 'ignore',
+            stderr: 'pipe'
+          })
+          const sudoExitCode = await sudoProc.exited
+
+          if (sudoExitCode !== 0) {
+            throw new Error('Failed to start Docker daemon')
+          }
+        }
+
+        this.emit('message', 'Docker daemon is starting...')
+      } catch (error) {
+        throw new Error('Failed to start Docker daemon.\n\n' +
+          '🐳 Please start Docker manually:\n' +
+          '   • Run: sudo systemctl start docker\n' +
+          '   • Then run: tana start')
       }
-      throw new Error('Docker is not running. Please start Docker Desktop and try again.')
+    } else {
+      // Windows or other
+      throw new Error('Docker is not running.\n\n' +
+        '🐳 Please start Docker Desktop manually and then run: tana start')
     }
+  }
+
+  /**
+   * Wait for Docker daemon to be ready
+   */
+  private async waitForDockerDaemon(maxWaitSeconds = 60): Promise<void> {
+    this.emit('message', 'Waiting for Docker to be ready...')
+
+    const startTime = Date.now()
+    let attempts = 0
+
+    while (Date.now() - startTime < maxWaitSeconds * 1000) {
+      attempts++
+
+      if (await this.isDockerDaemonRunning()) {
+        this.emit('message', `Docker is ready (took ${attempts} seconds)`)
+        return
+      }
+
+      // Wait 1 second before next check
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+
+    throw new Error(`Docker failed to start within ${maxWaitSeconds} seconds.\n\n` +
+      '🐳 Please check Docker Desktop:\n' +
+      '   • Make sure it\'s fully started\n' +
+      '   • Check for any error messages\n' +
+      '   • Then try: tana start')
   }
 
   /**
@@ -334,13 +444,52 @@ export class StartupManager extends EventEmitter {
     // Spawn the service directly
     const servicePath = this.getServicePath(service.name)
 
+    // Service-specific environment variables
+    const serviceEnv: Record<string, string> = {
+      ...process.env,
+      PORT: String(service.port),
+      NODE_ENV: process.env.NODE_ENV || 'development'
+    }
+
+    // Add service-specific configs
+    if (service.name === 't4') {
+      // Content directory: use config value, or default to ./content (relative to cwd)
+      serviceEnv.CONTENT_DIR = this.chainConfig?.t4?.contentDir || './content'
+      serviceEnv.T4_PORT = String(service.port)
+    } else if (service.name === 'ledger') {
+      // Database URL from chain config
+      serviceEnv.DATABASE_URL = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+      serviceEnv.REDIS_URL = this.chainConfig?.redis?.url || 'redis://localhost:6379'
+
+      // Consensus configuration (automatic based on validator count)
+      // Read from validator config if it exists, otherwise use defaults
+      const validatorConfig = getValidatorConfig()
+      serviceEnv.VALIDATOR_ID = validatorConfig?.validatorId || 'val_1'
+      serviceEnv.CONSENSUS_URL = validatorConfig
+        ? `http://localhost:${validatorConfig.httpPort}`
+        : 'http://localhost:9001'
+    } else if (service.name === 'identity') {
+      // Identity uses same database
+      serviceEnv.IDENTITY_DB_URL = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+    } else if (service.name === 'notifications') {
+      // Notifications needs database
+      serviceEnv.DATABASE_URL = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+    } else if (service.name === 'consensus') {
+      // Consensus service configuration
+      // Read from validator config if it exists, otherwise use defaults
+      const validatorConfig = getValidatorConfig()
+
+      serviceEnv.VALIDATOR_ID = validatorConfig?.validatorId || 'val_1'
+      serviceEnv.CONSENSUS_PORT = validatorConfig?.wsPort.toString() || '9000'
+      serviceEnv.HTTP_PORT = validatorConfig?.httpPort.toString() || String(service.port)
+      serviceEnv.DATABASE_URL = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+      serviceEnv.MESH_URL = this.chainConfig?.mesh?.url || 'http://localhost:8190'
+      serviceEnv.PEERS = validatorConfig?.peers ? JSON.stringify(validatorConfig.peers) : '[]'
+    }
+
     const proc = spawn(['bun', 'run', 'start'], {
       cwd: servicePath,
-      env: {
-        ...process.env,
-        PORT: String(service.port),
-        NODE_ENV: process.env.NODE_ENV || 'development'
-      },
+      env: serviceEnv,
       stdout: 'pipe',
       stderr: 'pipe'
     })
@@ -380,16 +529,29 @@ export class StartupManager extends EventEmitter {
    * Check if Docker container is running
    */
   private async checkDockerContainer(name: string): Promise<void> {
-    const proc = spawn(['docker', 'inspect', '--format', '{{.State.Running}}', `tana-${name}-1`], {
-      stdout: 'pipe'
-    })
+    // Try to find the container by name (could be local-${name}-1, tana-${name}-1, etc.)
+    const possibleNames = [
+      `local-${name}-1`,
+      `tana-${name}-1`,
+      `${name}-1`,
+      name
+    ]
 
-    await proc.exited
-    const output = (await new Response(proc.stdout).text()).trim()
+    for (const containerName of possibleNames) {
+      const proc = spawn(['docker', 'inspect', '--format', '{{.State.Running}}', containerName], {
+        stdout: 'pipe',
+        stderr: 'ignore'
+      })
 
-    if (output !== 'true') {
-      throw new Error(`Container not running`)
+      await proc.exited
+      const output = (await new Response(proc.stdout).text()).trim()
+
+      if (output === 'true') {
+        return // Container found and running
+      }
     }
+
+    throw new Error(`Container not found or not running (tried: ${possibleNames.join(', ')})`)
   }
 
   /**
@@ -448,6 +610,79 @@ export class StartupManager extends EventEmitter {
    */
   static getServices(): ServiceInfo[] {
     return SERVICES
+  }
+
+  /**
+   * Ensure validator config exists (auto-create if missing)
+   */
+  private async ensureValidator(): Promise<void> {
+    // Check if validator config already exists
+    const existingConfig = getValidatorConfig()
+
+    if (existingConfig) {
+      this.emit('message', `Validator already configured: ${existingConfig.validatorId}`)
+      return
+    }
+
+    this.emit('message', 'No validator found - auto-creating default validator...')
+
+    try {
+      this.emit('message', 'Generating keypair...')
+
+      // Generate validator keypair directly using noble/ed25519
+      const privateKeyBytes = new Uint8Array(32)
+      crypto.getRandomValues(privateKeyBytes)
+
+      this.emit('message', 'Deriving public key...')
+
+      // Use synchronous version to avoid hanging
+      const publicKeyBytes = ed.getPublicKey(privateKeyBytes)
+
+      this.emit('message', 'Public key derived')
+
+      // Convert to hex strings with ed25519_ prefix
+      const PREFIX_KEY = 'ed25519_'
+      const privateKey = PREFIX_KEY + Buffer.from(privateKeyBytes).toString('hex')
+      const publicKey = PREFIX_KEY + Buffer.from(publicKeyBytes).toString('hex')
+
+      this.emit('message', 'Keypair generated successfully')
+
+      const validatorId = `val_${publicKey.slice(8, 16)}`
+
+      // Create validator config with default settings
+      const config = {
+        validatorId,
+        publicKey,
+        privateKey,  // TODO: Encrypt this in production
+        wsPort: 9000,
+        httpPort: 9001,
+        wsUrl: 'ws://localhost:9000',
+        peers: [],
+        createdAt: new Date().toISOString(),
+      }
+
+      this.emit('message', 'Saving validator config...')
+
+      // Save to config directory
+      saveValidatorConfig(config)
+
+      this.emit('message', `✅ Default validator created: ${validatorId}`)
+      this.emit('message', `   WebSocket: ${config.wsUrl}`)
+      this.emit('message', `   HTTP API: http://localhost:${config.httpPort}`)
+    } catch (error) {
+      // Log warning but don't fail - validator is optional for basic operation
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorStack = error instanceof Error ? error.stack : ''
+
+      this.emit('message', `⚠️  Could not auto-create validator: ${errorMessage}`)
+
+      if (errorStack) {
+        console.error('Validator creation error stack:', errorStack)
+      }
+
+      this.emit('message', `   Consensus features will be unavailable`)
+      this.emit('message', `   To enable consensus, run: tana init validator`)
+    }
   }
 
   /**

@@ -135,6 +135,18 @@ program
   })
 
 // ============================================================================
+// BLOCK COMMANDS - Block production
+// ============================================================================
+
+program
+  .command('block produce')
+  .alias('produce')
+  .description('Produce a new block from pending transactions')
+  .action(async () => {
+    await commands.produceBlock()
+  })
+
+// ============================================================================
 // MESH COMMANDS - Network coordination
 // ============================================================================
 

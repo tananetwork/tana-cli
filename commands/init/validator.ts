@@ -16,7 +16,8 @@ export async function initValidator(options: ValidatorOptions = {}) {
   try {
     // Generate validator keypair
     const { publicKey, privateKey } = await generateKeypair()
-    const validatorId = `val_${publicKey.slice(0, 8)}`
+    // Skip the "ed25519_" prefix (8 chars) and take next 8 chars
+    const validatorId = `val_${publicKey.slice(8, 16)}`
 
     // Parse peers
     const peers = options.peers

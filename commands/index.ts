@@ -16,6 +16,9 @@ export { deployContract } from './deploy/contract'
 export { start } from './service/start'
 export { stop } from './service/stop'
 
+// Block commands
+export { produceBlock } from './block/produce'
+
 // Utility commands
 export { runContract } from './run/contract'
 export { checkBalance } from './balance/check'

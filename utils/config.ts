@@ -264,7 +264,7 @@ export interface ChainConfig {
 
   // Tana services
   mesh?: ServiceConfig
-  t4?: ServiceConfig
+  t4?: ServiceConfig & { contentDir?: string } // T4 content storage directory (default: "./content")
   ledger?: ServiceConfig
   identity?: ServiceConfig
   notifications?: ServiceConfig

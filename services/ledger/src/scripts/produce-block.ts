@@ -24,7 +24,7 @@ import { hasQuorum, getActiveValidators } from '../db/queries'
 const SYSTEM_PRODUCER_ID = '00000000-0000-0000-0000-000000000000'
 
 // Consensus configuration (from environment)
-const CONSENSUS_ENABLED = process.env.CONSENSUS_ENABLED === 'true'
+// Note: Consensus activates automatically when validatorCount >= 2
 const VALIDATOR_ID = process.env.VALIDATOR_ID || 'val_default'
 const CONSENSUS_URL = process.env.CONSENSUS_URL || 'http://localhost:9001'
 
@@ -740,11 +740,16 @@ async function produceBlock() {
     const signature = hash // Placeholder - would be: await signMessage(hash, producerPrivateKey)
 
     // ============================================================================
-    // CONSENSUS: Propose block and wait for quorum (if enabled)
+    // CONSENSUS: Propose block and wait for quorum (if multi-validator network)
     // ============================================================================
 
-    if (CONSENSUS_ENABLED) {
+    // Check if consensus is needed (2+ validators)
+    const validators = await getActiveValidators()
+    const consensusRequired = validators.length >= 2
+
+    if (consensusRequired) {
       console.log('')
+      console.log(`[Consensus] Multi-validator network detected (${validators.length} validators)`)
       console.log(`[Consensus] Proposing block ${hash.slice(0, 8)}... to network`)
       console.log(`[Consensus] Validator: ${VALIDATOR_ID}`)
 
@@ -807,6 +812,11 @@ async function produceBlock() {
       }
 
       console.log(`[Consensus] ✅ Block ${hash.slice(0, 8)}... reached quorum - committing`)
+      console.log('')
+    } else {
+      console.log('')
+      console.log(`[Single Validator Mode] Skipping consensus (${validators.length} validator${validators.length === 1 ? '' : 's'})`)
+      console.log(`[Single Validator Mode] Committing block directly`)
       console.log('')
     }
 
