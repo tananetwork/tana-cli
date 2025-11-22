@@ -16,10 +16,17 @@ import { startWeb } from './start-web'
 export async function start(options: { mode?: string; chain?: string; genesis?: boolean } = {}) {
   switch (options.mode) {
     case 'tui':
-      // Launch TUI mode (terminal dashboard) - dynamic import to avoid loading deps
-      const { startTUI } = await import('./start-tui')
-      await startTUI(options.chain, options.genesis)
-      break
+      // TUI mode not yet implemented
+      console.log(chalk.bold('\n📊 TUI Dashboard\n'))
+      console.log(chalk.yellow('⚠️  TUI interface not yet implemented'))
+      console.log()
+      console.log(chalk.gray('For now, use WebUI instead:'))
+      console.log(chalk.cyan('  tana start webui'))
+      console.log()
+      console.log(chalk.gray('Or use CLI mode for startup:'))
+      console.log(chalk.cyan('  tana start'))
+      console.log()
+      process.exit(0)
 
     case 'webui':
       // Launch WebUI mode (browser dashboard)

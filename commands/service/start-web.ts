@@ -119,7 +119,9 @@ export async function startWeb(chainName?: string, genesis?: boolean) {
  */
 async function startFrontendServer() {
   // WebUI is embedded in cli/webui/
-  const webuiPath = new URL('../../../webui', import.meta.url).pathname
+  // This file is at: cli/commands/service/start-web.ts
+  // WebUI is at: cli/webui/
+  const webuiPath = new URL('../../webui', import.meta.url).pathname
 
   console.log(chalk.cyan('🌐 Starting web dashboard...'))
   console.log()
