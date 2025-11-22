@@ -20,14 +20,20 @@ const app = new Hono()
 app.use('*', cors())
 
 // Validator endpoints to poll
+// For single-validator mode: only monitor the primary ledger
 const VALIDATORS = [
-  { id: 'val_1', consensusUrl: 'http://localhost:9001', ledgerUrl: 'http://localhost:8080' },
-  { id: 'val_2', consensusUrl: 'http://localhost:9011', ledgerUrl: 'http://localhost:8081' },
-  { id: 'val_3', consensusUrl: 'http://localhost:9021', ledgerUrl: 'http://localhost:8082' },
-  { id: 'val_4', consensusUrl: 'http://localhost:9031', ledgerUrl: 'http://localhost:8083' },
-  { id: 'val_5', consensusUrl: 'http://localhost:9041', ledgerUrl: 'http://localhost:8084' },
-  { id: 'val_6', consensusUrl: 'http://localhost:9051', ledgerUrl: 'http://localhost:8085' },
+  { id: 'val_1', consensusUrl: null, ledgerUrl: 'http://localhost:8080' },
 ]
+
+// For multi-validator mode (uncomment when consensus is enabled):
+// const VALIDATORS = [
+//   { id: 'val_1', consensusUrl: 'http://localhost:9001', ledgerUrl: 'http://localhost:8080' },
+//   { id: 'val_2', consensusUrl: 'http://localhost:9011', ledgerUrl: 'http://localhost:8081' },
+//   { id: 'val_3', consensusUrl: 'http://localhost:9021', ledgerUrl: 'http://localhost:8082' },
+//   { id: 'val_4', consensusUrl: 'http://localhost:9031', ledgerUrl: 'http://localhost:8083' },
+//   { id: 'val_5', consensusUrl: 'http://localhost:9041', ledgerUrl: 'http://localhost:8084' },
+//   { id: 'val_6', consensusUrl: 'http://localhost:9051', ledgerUrl: 'http://localhost:8085' },
+// ]
 
 interface MeshNode {
   id: string
