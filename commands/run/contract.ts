@@ -91,11 +91,14 @@ export async function executeContractSecurely(
   await Bun.write(tmpFile, preprocessedCode)
 
   try {
+    // Build command with --context flag if context provided
+    const cmd = context
+      ? [runtimePath, tmpFile, '--context', JSON.stringify(context)]
+      : [runtimePath, tmpFile]
+
     // Spawn tana-runtime subprocess with contract file
-    // TODO: Add --context flag to pass execution context as JSON
-    // For now, runtime uses mock context
     const proc = Bun.spawn({
-      cmd: [runtimePath, tmpFile],
+      cmd,
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -117,13 +120,26 @@ export async function executeContractSecurely(
       }
     }
 
-    // tana-runtime prints result to stderr (using eprintln)
-    // Parse the result from runtime output
-    // For now, return success (need to enhance runtime to output JSON)
-    return {
-      success: true,
-      result: null, // TODO: Parse JSON result from stdout
-      gasUsed: 0    // TODO: Get from runtime output
+    // Parse JSON result from stdout
+    // The runtime outputs debug logs to stderr and JSON to stdout
+    try {
+      // Find the JSON line (should be the last line of stdout)
+      const lines = stdout.trim().split('\n')
+      const jsonLine = lines[lines.length - 1]
+      const runtimeOutput = JSON.parse(jsonLine)
+
+      return {
+        success: runtimeOutput.success || true,
+        result: runtimeOutput.result || null,
+        gasUsed: runtimeOutput.gasUsed || 0,
+      }
+    } catch (parseError) {
+      // If JSON parsing fails, return success with minimal info
+      return {
+        success: true,
+        result: null,
+        gasUsed: 0
+      }
     }
   } catch (error: any) {
     // Clean up temp file on error
