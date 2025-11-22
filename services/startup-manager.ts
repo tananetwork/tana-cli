@@ -177,17 +177,17 @@ export class StartupManager extends EventEmitter {
       // Ensure database exists
       await this.ensureDatabase()
 
+      // Run ledger migrations before starting services
+      await this.runLedgerMigrations()
+
       // Start Tana services (mesh, t4, ledger, consensus, etc.)
       const tanaServices = SERVICES.filter(s => s.type === 'tana')
       for (const service of tanaServices) {
         await this.startService(service)
       }
 
-      // Initialize genesis after ledger is running (if --genesis flag)
-      // This ensures migrations have run and database tables exist
+      // Initialize genesis (if --genesis flag)
       if (this.genesis) {
-        this.emit('message', 'Waiting for ledger service to complete migrations...')
-        await this.waitForMigrations()
         await this.initializeGenesis()
       }
 
@@ -574,6 +574,7 @@ export class StartupManager extends EventEmitter {
     const possibleNames = [
       `local-${name}-1`,
       `tana-${name}-1`,
+      `tana-${name}`,  // For compose v2 (no -1 suffix)
       `${name}-1`,
       name
     ]
@@ -706,50 +707,31 @@ export class StartupManager extends EventEmitter {
   }
 
   /**
-   * Wait for ledger migrations to complete
+   * Run ledger database migrations
    */
-  private async waitForMigrations(maxRetries = 30): Promise<void> {
-    const dbUrl = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432'
-    const match = dbUrl.match(/postgres:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/?(.*)?/)
-    if (!match) {
-      throw new Error(`Invalid postgres URL: ${dbUrl}`)
+  private async runLedgerMigrations(): Promise<void> {
+    this.emit('message', 'Running database migrations...')
+
+    const migrationScript = join(import.meta.dir, '../services/ledger/scripts/run-migrations.ts')
+    const dbUrl = this.chainConfig?.postgres?.url || 'postgres://postgres:tana_dev_password@localhost:5432/tana'
+
+    const proc = spawn(['bun', 'run', migrationScript], {
+      env: {
+        ...process.env,
+        DATABASE_URL: dbUrl
+      },
+      stdout: 'pipe',
+      stderr: 'pipe'
+    })
+
+    await proc.exited
+
+    if (proc.exitCode !== 0) {
+      const stderr = await new Response(proc.stderr).text()
+      throw new Error(`Migration failed: ${stderr}`)
     }
 
-    const [_, user, password, host, port, database] = match
-    const dbName = database || 'tana'
-
-    for (let i = 0; i < maxRetries; i++) {
-      const client = new Client({ host, port: parseInt(port), user, password, database: dbName })
-
-      try {
-        await client.connect()
-
-        // Check if blocks table exists AND has the transactions column (from migration 0013)
-        const result = await client.query(`
-          SELECT EXISTS (
-            SELECT FROM information_schema.columns
-            WHERE table_schema = 'public'
-            AND table_name = 'blocks'
-            AND column_name = 'transactions'
-          )
-        `)
-
-        await client.end()
-
-        if (result.rows[0].exists) {
-          this.emit('message', '✓ Migrations complete - all schema changes applied')
-          return
-        }
-
-        // Wait 1 second before retrying
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      } catch (error) {
-        await client.end().catch(() => {})
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-    }
-
-    throw new Error('Timeout waiting for migrations to complete')
+    this.emit('message', '✓ Database migrations complete')
   }
 
   /**

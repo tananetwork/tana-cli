@@ -23,8 +23,8 @@ import { initializeRedisStreams, listPendingTransactions, getStreamLength } from
 // Import heartbeat automation
 import { startHeartbeat } from './heartbeat'
 
-// Import database migrations
-import { runMigrations } from './db'
+// Database migrations are run via standalone script before service starts
+// (see: scripts/run-migrations.ts)
 
 const app = new Hono()
 
@@ -131,14 +131,8 @@ async function checkDependencies() {
     errors.push('DATABASE_URL environment variable not set')
   }
 
-  // Run database migrations first
-  if (process.env.DATABASE_URL) {
-    try {
-      await runMigrations()
-    } catch (err: any) {
-      errors.push(`Database migration failed: ${err.message}`)
-    }
-  }
+  // Migrations are run via standalone script before services start
+  // No need to run them here
 
   // Check Redis connection by attempting to initialize streams
   try {

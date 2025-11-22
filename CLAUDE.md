@@ -3,51 +3,86 @@
 This file provides guidance to Claude Code when working with the Tana CLI project.
 
 **Last Updated:** November 22, 2025
-**MVP Progress:** ~75% complete
+**MVP Progress:** ~80% complete (Genesis ✅)
 **Target:** Mid-December 2025
 
 ---
 
 ## 🎯 IMMEDIATE NEXT STEPS (Priority Order)
 
-### Phase 1: Genesis Integration (1-2 days)
+### Phase 1: Genesis Integration ✅ **COMPLETED (Nov 22, 2025)**
 
-**1. Wire Genesis Validation to Startup Manager**
-- **File:** `services/startup-manager.ts`
-- **Task:** Add genesis validation step after Docker checks, before service startup
-- **Implementation:**
-  ```typescript
-  // In startAll() method, after checkDockerRunning():
-  if (chainConfig?.isGenesis) {
-    await this.initializeGenesis()
-  }
+**Genesis initialization is now fully automated via `tana start --genesis`!**
+
+**What Works:**
+- ✅ Automatic database drop/recreate for fresh genesis
+- ✅ All 14 migrations applied via standalone script
+- ✅ Genesis block created (height 0)
+- ✅ Sovereign user created with role assignment
+- ✅ All services start successfully
+- ✅ Validator auto-configured on first run
+
+**Key Files Modified:**
+- `services/ledger/scripts/run-migrations.ts` - New standalone migration runner
+- `services/ledger/src/index.ts` - Removed duplicate migration logic
+- `services/startup-manager.ts` - Integrated migration script, database recreation
+- `docker-compose.yml` - Fixed Postgres username to match application code
+
+**Migration System:**
+- **Old approach:** Drizzle's migrate() with journal metadata (broken - only ran 3/14 migrations)
+- **New approach:** Direct SQL file execution in alphabetical order (simple, reliable)
+- **Location:** All 14 SQL migration files in `services/ledger/migrations/`
+- **Execution:** Standalone script runs BEFORE services start
+
+**Testing Genesis:**
+```bash
+# Clean start with genesis initialization
+bun run dev start --genesis
+
+# Verify genesis block
+curl http://localhost:8080/blocks
+
+# Verify sovereign user
+curl http://localhost:8080/users
+```
+
+### Phase 2: Testing & Edge Cases (Current Phase)
+
+**1. Test TUI and WebUI Modes** 🔄 **IN PROGRESS**
+- **Task:** Verify all three interfaces work with genesis
+- **Commands to test:**
+  ```bash
+  bun run dev start           # CLI mode
+  bun run dev start tui       # Terminal UI
+  bun run dev start webui     # Browser dashboard
   ```
-- **What to validate:**
-  - Chain config has `isGenesis: true`
-  - Sovereign user exists (first user created)
-  - Core contracts directory exists and has contracts
-  - Genesis block doesn't already exist (check ledger DB)
+- **What to verify:**
+  - Genesis initialization works in all modes
+  - Service startup progresses correctly
+  - Error messages display properly
+  - All services become healthy
 
-**2. Deploy Core Contracts on Genesis**
-- **File:** `services/ledger/src/scripts/create-genesis.ts` (or new genesis service)
-- **Task:** Scan contracts directory, compile, and deploy to DB
-- **Implementation:**
-  - Read `chainConfig.coreContracts.dir` (default: `./contracts`)
-  - Scan for `*.ts` files in `core/` subdirectory
-  - For each contract:
-    - Compile to WASM (use existing runtime)
-    - Insert into `contracts` table with `isCore: true`
-    - Set `creator` to sovereign public key
-  - Log each deployed contract
+**2. Find Edge Cases During Startup**
+- **Task:** Test failure scenarios and recovery
+- **Scenarios:**
+  - Docker not running
+  - Redis connection failure
+  - Postgres authentication failure
+  - Port conflicts (8080, 8090, etc. already in use)
+  - Missing validator config
+  - Database already exists (non-genesis mode)
+  - Interrupted genesis initialization
 
-**3. Create Sovereign Account On-Chain**
-- **File:** `services/ledger/src/scripts/create-genesis.ts`
-- **Task:** After genesis block creation, insert sovereign user
-- **Implementation:**
-  - Get sovereign user via `getSovereignUser()` from config utils
-  - Insert into `users` table:
-    - publicKey, username, displayName from user config
-    - role: 'sovereign' (hardcoded for first user)
+**3. Block Production Testing**
+- **File:** `services/ledger/src/scripts/produce-block.ts`
+- **Task:** Verify block production works after genesis
+- **Testing:**
+  - Manual block production
+  - Automatic block production via consensus
+  - Transaction inclusion in blocks
+  - State root calculation
+
+### Phase 3: Smart Contract Runtime (3-5 days)
     - stateHash: deterministic based on genesis
     - nonce: 0
   - Initialize balances for all base currencies (USD, BTC, ETH)
@@ -188,7 +223,15 @@ This file provides guidance to Claude Code when working with the Tana CLI projec
 
 ## 📋 Current System State
 
-### ✅ Completed (Nov 21, 2025)
+### ✅ Completed (Nov 22, 2025)
+
+**Genesis Integration:** ✅ **FULLY WORKING**
+- Genesis block creation (height 0)
+- Sovereign account creation with role assignment
+- Database migrations (all 14 SQL files)
+- Automatic database drop/recreate for --genesis mode
+- Validator auto-configuration
+- All services start successfully after genesis
 
 **Configuration System:**
 - Top-level service objects (just URL, no flags)
@@ -214,14 +257,31 @@ This file provides guidance to Claude Code when working with the Tana CLI projec
 - Legacy code removed (orchestrator.ts)
 - tana-topology repo ready for deletion
 
-### ⏳ In Progress
+**Database Migrations:**
+- Standalone migration script (bypasses Drizzle journal)
+- All 14 SQL migrations applied automatically
+- Runs BEFORE services start (not during)
+- Postgres username fixed (postgres, not tana)
 
-**Genesis Integration:**
-- Genesis block creation ✅ (exists in ledger service)
-- Sovereign account creation 🔄 (needs wiring to startup)
-- Core contracts deployment 🔄 (needs implementation)
+### ⏳ In Progress (Next Session)
+
+**Interface Testing:**
+- Test TUI mode with genesis
+- Test WebUI mode with genesis
+- Verify error handling in all modes
+
+**Edge Case Testing:**
+- Docker not running scenario
+- Port conflict handling
+- Database connection failures
+- Recovery from interrupted genesis
 
 ### 🔜 Not Started
+
+**Block Production:**
+- Manual block production testing
+- Automatic block production via consensus
+- Transaction inclusion verification
 
 **Smart Contract Runtime:**
 - WASM execution integration
@@ -229,9 +289,9 @@ This file provides guidance to Claude Code when working with the Tana CLI projec
 - State updates from contract results
 
 **Multi-Validator Consensus:**
-- BFT implementation (code exists, needs wiring)
-- Leader rotation
-- Fault tolerance testing
+- BFT implementation (code exists, needs testing)
+- Leader rotation verification
+- Fault tolerance testing (3+ validators)
 
 ---
 
@@ -405,23 +465,41 @@ SELECT * FROM balances;
 
 ## 🐛 Known Issues
 
-### Genesis Integration
+### ✅ Fixed (Nov 22, 2025)
 
-**Issue:** Genesis block creation not wired to startup-manager
-**Impact:** Genesis runs via manual script, not automatic on `tana start`
-**Fix:** Implement step 1-3 above
+**Drizzle Migration Journal Out of Sync** - RESOLVED
+- **Issue:** Journal only tracked 3/14 migrations, causing incomplete schema
+- **Impact:** Missing columns (transactions, state_changes, content_refs) in blocks table
+- **Fix:** Created standalone migration script that directly executes all SQL files
+- **Files:** `services/ledger/scripts/run-migrations.ts`
 
-### Consensus
+**Postgres Username Mismatch** - RESOLVED
+- **Issue:** docker-compose.yml used `POSTGRES_USER: tana` but code expected `postgres`
+- **Impact:** Database authentication failures
+- **Fix:** Changed docker-compose.yml to use `postgres` username
 
-**Issue:** Consensus service exists but not integrated with ledger
-**Impact:** Single-validator only, no BFT finality
-**Fix:** Implement step 6 above
+**Duplicate Migration Logic** - RESOLVED
+- **Issue:** Both startup-manager and ledger service tried to run migrations
+- **Impact:** Race conditions, confusing logs
+- **Fix:** Removed migration logic from ledger service, only runs via standalone script
 
-### Smart Contracts
+### Active Issues
 
-**Issue:** Runtime exists (Rust) but not callable from ledger
-**Impact:** Contracts can be deployed but not executed
-**Fix:** Implement step 5 above
+**Core Contracts Not Deploying** 🔄
+- **Issue:** Genesis creates block and sovereign user, but contracts array is empty
+- **Impact:** No core contracts available after genesis
+- **Investigation needed:** Check if contracts directory exists, verify deployment logic
+- **File:** `services/ledger/src/scripts/create-genesis.ts:254`
+
+**Consensus Not Wired to Block Production**
+- **Issue:** Consensus service exists but not integrated with ledger
+- **Impact:** Single-validator only, no BFT finality
+- **Next:** Test multi-validator setup (3+ nodes)
+
+**Smart Contract Execution**
+- **Issue:** Runtime exists (Rust) but not callable from ledger API
+- **Impact:** Contracts can be deployed but not executed
+- **Next:** Wire WASM runtime to contract execution endpoint
 
 ---
 
